@@ -152,10 +152,10 @@ st.sidebar.info(f"📍 **Coverage:** {len(df_filtered)} Desa")
 
 # Color Helpers for PyDeck/Map
 def get_hex_risk(score):
-    if score < 20: return [0, 204, 150, 200] # Green
-    elif score < 40: return [255, 161, 90, 200] # Orange
-    elif score < 60: return [239, 85, 59, 200] # Red Orange
-    else: return [179, 0, 0, 200] # Dark Red
+    if score < 20: return '#00cc96' # Green
+    elif score < 40: return '#ffa15a' # Orange
+    elif score < 60: return '#ef553b' # Red Orange
+    else: return '#b30000' # Dark Red
 
 def get_hex_potential(score):
     if score > 80: return '#00cc96' # Bright Green
@@ -163,7 +163,7 @@ def get_hex_potential(score):
     elif score > 40: return '#ab63fa' # Purple
     else: return '#d3d3d3' # Grey
 
-df_filtered['color_risk_list'] = df_filtered['Final_Risk_Score'].apply(get_hex_risk)
+df_filtered['color_hex_risk'] = df_filtered['Final_Risk_Score'].apply(get_hex_risk)
 df_filtered['color_pot_hex'] = df_filtered['Skor_Potensi'].apply(get_hex_potential)
 
 # -----------------------------------------------------------------------------
@@ -383,30 +383,10 @@ with tab4:
     col_r1, col_r2 = st.columns([2, 1])
     
     with col_r1:
-        st.subheader("🗺️ Peta Risiko Interaktif")
-        st.caption("Arahkan mouse ke titik untuk melihat detail risiko.")
-        
-        view_state = pdk.ViewState(
-            latitude=df_filtered['lat'].mean(),
-            longitude=df_filtered['lon'].mean(),
-            zoom=10, pitch=0
-        )
-        
-        layer_risk = pdk.Layer(
-            "ScatterplotLayer",
-            data=df_filtered,
-            get_position='[lon, lat]',
-            get_fill_color='color_risk_list',
-            get_radius=200, pickable=True, opacity=0.8, filled=True,
-            radius_min_pixels=5, radius_max_pixels=20,
-        )
-        
-        st.pydeck_chart(pdk.Deck(
-            map_style='mapbox://styles/mapbox/light-v9',
-            initial_view_state=view_state,
-            layers=[layer_risk],
-            tooltip={"html": "<b>Desa:</b> {Desa}<br><b>Risk Score:</b> {Final_Risk_Score:.1f}<br><b>Jml Trigger:</b> {Risk_Trigger_Count}"}
-        ))
+        st.subheader("🗺️ Peta Risiko (Heatmap)")
+        st.caption("Merah = Risiko Tinggi. Hijau = Risiko Rendah.")
+        # SIMPLE MAP FOR RISK (Sama seperti Executive Summary Style)
+        st.map(df_filtered, latitude='lat', longitude='lon', color='color_hex_risk', size=30, zoom=10)
 
     with col_r2:
         st.subheader("🔍 Pemicu Risiko")
@@ -426,6 +406,22 @@ with tab4:
 
     st.markdown("---")
     st.subheader("📋 Interpretasi Skor Risiko")
+    
+    # PENJELASAN METODOLOGI SKOR RISIKO
+    with st.expander("ℹ️ Definisi & Metodologi Skor Risiko (Risk Score)"):
+        st.markdown("""
+        **Skor Risiko** adalah metrik (skala 0-100) yang memprediksi probabilitas gangguan pembayaran atau gagal bayar di suatu wilayah.
+        
+        **Komponen Perhitungan:**
+        1.  **Risiko Saturasi (30%):** Dihitung dari rasio total pinjaman terhadap jumlah keluarga. Semakin tinggi beban utang, semakin tinggi risiko.
+        2.  **Risiko Ekonomi (30%):** Kebalikan dari Skor Potensi. Ekonomi yang lemah meningkatkan risiko default.
+        3.  **Faktor Lingkungan & Sosial (40%):**
+            * *Konflik Sosial:* Penambahan poin risiko tertinggi (+50).
+            * *Kawasan Kumuh:* Risiko agunan (+30).
+            * *Rawan Bencana:* Risiko kontinuitas bisnis (+20).
+            
+        *Rumus:* $$Risk = (0.3 \times Saturation) + (0.3 \times (100 - Potensi)) + (0.4 \times EnvFactors)$$
+        """)
     
     def interpret_score(score):
         if score > 80: return "⛔ KRITIS: Stop Lending"
@@ -518,4 +514,4 @@ with tab5:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v11.3 | Enhanced Growth Visualization")
+st.caption("Geo-Credit Intelligence Framework v11.4 | Final Release")
