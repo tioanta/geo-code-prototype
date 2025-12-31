@@ -48,29 +48,26 @@ st.markdown("""
     .validation-card {
         background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px;
     }
-    .level-badge {
-        background-color: #e3f2fd; color: #1565c0; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-right: 5px;
-    }
     .status-pass { color: #2e7d32; font-weight: bold; }
     .status-fail { color: #c62828; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. DATA ENGINE (LOADER CSV)
+# 2. DATA ENGINE (EXCEL & CSV LOADER)
 # -----------------------------------------------------------------------------
 @st.cache_data
 def load_data_engine():
     data = {}
     try:
-        # 1. Load Main Data
+        # 1. Load Main Data (CSV)
         data['main'] = pd.read_csv('Prototype Jawa Tengah.csv')
         
-        # 2. Load Validation Data (CSV Files)
-        # Note: Menggunakan nama file CSV sesuai upload user
-        data['level1'] = pd.read_csv('Kewajaran_Omzet_All.xlsx - Level 1.csv')
-        data['level2'] = pd.read_csv('Kewajaran_Omzet_All.xlsx - Level 2.csv')
-        data['level3'] = pd.read_csv('Kewajaran_Omzet_All.xlsx - Level 3.csv')
+        # 2. Load Validation Data (EXCEL Multiple Sheets)
+        excel_file = 'Kewajaran_Omzet_All.xlsx'
+        data['level1'] = pd.read_excel(excel_file, sheet_name='Level 1')
+        data['level2'] = pd.read_excel(excel_file, sheet_name='Level 2')
+        data['level3'] = pd.read_excel(excel_file, sheet_name='Level 3')
         
         # --- DATA PRE-PROCESSING ---
         # Clean Columns for Main Data
@@ -136,6 +133,7 @@ def load_data_engine():
         data['main']['Est_Unserved_KK'] = (data['main']['Jumlah_KK'] * (1 - saturation_ratio)).astype(int)
         
     except Exception as e:
+        st.error(f"Error loading data: {e}")
         return None
         
     return data
@@ -143,11 +141,11 @@ def load_data_engine():
 # LOAD DATA
 dataset = load_data_engine()
 if dataset is None:
-    st.error("❌ Data tidak ditemukan. Pastikan file CSV (Prototype & Kewajaran Omzet Level 1-3) ada.")
+    st.error("❌ Data tidak ditemukan. Pastikan 'Prototype Jawa Tengah.csv' dan 'Kewajaran_Omzet_All.xlsx' ada.")
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR CONTROLS (DASHBOARD FILTER)
+# 3. SIDEBAR CONTROLS
 # -----------------------------------------------------------------------------
 st.sidebar.title("🎛️ Geo-Control Panel")
 
@@ -166,13 +164,12 @@ if not selected_kec:
     st.warning("⚠️ Mohon pilih minimal satu kecamatan.")
     st.stop()
 
-# df_filtered untuk Tab 1-4
 df_filtered = df_kab[df_kab['Kecamatan'].isin(selected_kec)].copy()
 
 st.sidebar.markdown("---")
 st.sidebar.info(f"📍 **Coverage:** {len(df_filtered)} Desa")
 
-# Color Helpers for Map
+# Color Helpers
 def get_hex_risk(score):
     if score < 20: return '#00cc96' # Green
     elif score < 40: return '#ffa15a' # Orange
@@ -243,9 +240,10 @@ with tab1:
             """, unsafe_allow_html=True)
         with sent_col2:
             chart_sent_bar = alt.Chart(sec_stats.head(5)).mark_bar().encode(
-                x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0])),
-                y=alt.Y('Sektor_Dominan', sort='-x'),
-                color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'))
+                x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0]), title='Rata-rata Rating'),
+                y=alt.Y('Sektor_Dominan', sort='-x', title='Sektor'),
+                color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'), legend=None),
+                tooltip=['Sektor_Dominan', 'Sentiment_Score']
             ).properties(height=200)
             st.altair_chart(chart_sent_bar, use_container_width=True)
 
@@ -361,7 +359,7 @@ with tab4:
 # ================= TAB 5: PENGECEKAN KEWAJARAN (VALIDATION ENGINE) =================
 with tab5:
     st.markdown("### ✅ Pengecekan Tingkat Kewajaran (Validation Engine)")
-    st.info("Modul ini memvalidasi inputan Mantri menggunakan 3 Level Benchmark (Provinsi -> Sektor -> Kabupaten/Sub-Sektor).")
+    st.info("Fitur untuk Mantri memvalidasi inputan pengajuan kredit menggunakan 3 Level Benchmark (Provinsi, Sektor, Kabupaten).")
 
     # --- 1. SELECTION PANEL ---
     with st.container():
@@ -394,10 +392,10 @@ with tab5:
             
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 2. INPUT PANEL ---
+    # --- 2. INPUT PANEL (NO PLAFOND INPUT) ---
     with st.container():
         st.markdown('<div class="validation-card">', unsafe_allow_html=True)
-        st.markdown("#### 2. Input Data Keuangan (Tanpa Plafond)")
+        st.markdown("#### 2. Input Data Keuangan")
         
         c_in1, c_in2, c_in3 = st.columns(3)
         with c_in1:
@@ -407,7 +405,7 @@ with tab5:
         with c_in3:
             in_laba = st.number_input("Laba (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
             
-        btn_check = st.button("🔍 Analisa Kewajaran & Rekomendasi", type="primary")
+        btn_check = st.button("🔍 Analisa & Rekomendasi Plafond", type="primary")
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- 3. VALIDATION ENGINE & RESULT ---
@@ -486,4 +484,4 @@ with tab5:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v12.3 | Multi-Level Validation Engine")
+st.caption("Geo-Credit Intelligence Framework v12.4 | Final Validation Engine with Excel Support")
