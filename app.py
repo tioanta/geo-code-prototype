@@ -7,24 +7,40 @@ import numpy as np
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Geo-Credit Intelligence",
-    page_icon="🌍",
+    page_title="Geo-Credit Risk & Saturation",
+    page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Custom CSS for Professional UI
+st.markdown("""
+<style>
+    .metric-card {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px;
+        border-left: 5px solid #2e7bcf;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    }
+    h1, h2, h3 { color: #2c3e50; }
+</style>
+""", unsafe_allow_html=True)
+
 # -----------------------------------------------------------------------------
-# 2. DATA LOADING & PREPROCESSING
+# 2. DATA LOADING & ENGINEERING
 # -----------------------------------------------------------------------------
 @st.cache_data
-def load_data():
-    # Load dataset
-    df = pd.read_csv('Prototype Jawa Tengah.csv')
-    
-    # Clean Column Names (Remove long prefixes)
+def load_and_process_data():
+    try:
+        df = pd.read_csv('Prototype Jawa Tengah.csv')
+    except FileNotFoundError:
+        return None
+
+    # Clean Column Names
     df.columns = [col.replace('potensi_wilayah_kel_podes_pdrb_sekda_current.', '') for col in df.columns]
     
-    # Rename critical columns for easier access
+    # Rename critical columns
     df.rename(columns={
         'nama_kabupaten': 'Kabupaten',
         'nama_kecamatan': 'Kecamatan',
@@ -33,141 +49,144 @@ def load_data():
         'longitude_desa': 'lon',
         'total_pinjaman_kel': 'Total_Pinjaman',
         'total_simpanan_kel': 'Total_Simpanan',
-        'jumlah_industri_mikro': 'Industri_Mikro',
-        'attractiveness_index': 'Attractiveness_Score',
-        'kelas_potensi_kel': 'Kelas_Potensi'
+        'jumlah_keluarga_pengguna_listrik': 'Jumlah_KK', # Proxy for Households
+        'attractiveness_index': 'Skor_Potensi',
+        'max_tipe_usaha': 'Sektor_Dominan'
     }, inplace=True)
     
-    # Fill NaN with 0 for numerical columns
+    # Fill NaN
     num_cols = df.select_dtypes(include=[np.number]).columns
     df[num_cols] = df[num_cols].fillna(0)
     
+    # --- FEATURE ENGINEERING: SATURATION METRICS ---
+    # 1. Loan Density (Rata-rata Pinjaman per Keluarga)
+    # Menghindari pembagian dengan nol
+    df['Jumlah_KK'] = df['Jumlah_KK'].replace(0, 1) 
+    df['Loan_per_HH'] = (df['Total_Pinjaman'] / df['Jumlah_KK']) / 1_000_000 # Dalam Juta Rupiah
+    
+    # 2. Saturation Level Classification (Dynamic Quintiles)
+    # Kita bagi menjadi 3 level: Low, Optimal, Saturated berdasarkan distribusi data
+    q33 = df['Loan_per_HH'].quantile(0.33)
+    q66 = df['Loan_per_HH'].quantile(0.66)
+    
+    def classify_saturation(x):
+        if x < q33: return 'Low Saturation (Underbanked)'
+        elif x < q66: return 'Optimal'
+        else: return 'High Saturation (Overbanked)'
+        
+    df['Status_Saturasi'] = df['Loan_per_HH'].apply(classify_saturation)
+    
+    # 3. Strategy Quadrant
+    # Membandingkan Potensi (X) vs Saturasi (Y)
+    avg_potensi = df['Skor_Potensi'].mean()
+    avg_saturasi = df['Loan_per_HH'].mean()
+    
+    def get_quadrant(row):
+        high_potensi = row['Skor_Potensi'] >= avg_potensi
+        high_saturasi = row['Loan_per_HH'] >= avg_saturasi
+        
+        if high_potensi and not high_saturasi:
+            return "💎 Hidden Gem (Grow)"
+        elif high_potensi and high_saturasi:
+            return "⚔️ Red Ocean (Compete)"
+        elif not high_potensi and high_saturasi:
+            return "⚠️ High Risk (Avoid)"
+        else:
+            return "💤 Dormant (Monitor)"
+
+    df['Strategy_Quadrant'] = df.apply(get_quadrant, axis=1)
+
     return df
 
-try:
-    df = load_data()
-except FileNotFoundError:
-    st.error("File 'Prototype Jawa Tengah.csv' tidak ditemukan. Pastikan file ada di folder yang sama.")
+df = load_and_process_data()
+
+if df is None:
+    st.error("⚠️ File data tidak ditemukan.")
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR FILTERS
+# 3. SIDEBAR
 # -----------------------------------------------------------------------------
-st.sidebar.title("🔍 Geo-Filter")
-st.sidebar.info("Filter wilayah untuk analisis spesifik.")
-
-# Filter Kabupaten
+st.sidebar.title("🛡️ Risk Control")
 selected_kab = st.sidebar.selectbox("Pilih Kabupaten", df['Kabupaten'].unique())
 df_kab = df[df['Kabupaten'] == selected_kab]
 
-# Filter Kecamatan
-selected_kec = st.sidebar.multiselect(
-    "Pilih Kecamatan", 
-    options=df_kab['Kecamatan'].unique(),
-    default=df_kab['Kecamatan'].unique()
-)
+selected_kec = st.sidebar.multiselect("Filter Kecamatan", df_kab['Kecamatan'].unique(), default=df_kab['Kecamatan'].unique())
 df_filtered = df_kab[df_kab['Kecamatan'].isin(selected_kec)]
 
 # -----------------------------------------------------------------------------
-# 4. MAIN DASHBOARD
+# 4. MAIN DASHBOARD: SATURATION ANALYSIS
 # -----------------------------------------------------------------------------
-st.title(f"🌍 Geo-Credit Intelligence: {selected_kab}")
-st.markdown("### Analisis Potensi Wilayah & Risiko Kredit Mikro")
+st.title(f"Analisis Saturasi Kredit: {selected_kab}")
+st.markdown("Identifikasi area yang *Underbanked* (Peluang) vs *Overbanked* (Risiko).")
 
-# --- KPI METRICS ---
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("Total Desa", f"{len(df_filtered):,}")
-with col2:
-    avg_score = df_filtered['Attractiveness_Score'].mean()
-    st.metric("Rata-rata Skor Wilayah", f"{avg_score:.2f}")
-with col3:
-    total_loan = df_filtered['Total_Pinjaman'].sum() / 1e9
-    st.metric("Total Exposure Kredit (Miliar)", f"Rp {total_loan:,.1f} M")
-with col4:
-    total_deposit = df_filtered['Total_Simpanan'].sum() / 1e9
-    st.metric("Total Simpanan (Miliar)", f"Rp {total_deposit:,.1f} M")
+# --- KPI SATURASI ---
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    avg_loan_hh = df_filtered['Loan_per_HH'].mean()
+    st.metric("Rata-rata Pinjaman/KK", f"Rp {avg_loan_hh:,.1f} Juta")
+with c2:
+    saturated_count = len(df_filtered[df_filtered['Status_Saturasi'] == 'High Saturation (Overbanked)'])
+    st.metric("Desa Jenuh (High Risk)", f"{saturated_count} Desa")
+with c3:
+    opportunity_count = len(df_filtered[df_filtered['Strategy_Quadrant'] == '💎 Hidden Gem (Grow)'])
+    st.metric("Desa Peluang (Hidden Gem)", f"{opportunity_count} Desa", delta="Target Ekspansi", delta_color="normal")
+with c4:
+    max_loan = df_filtered['Loan_per_HH'].max()
+    max_desa = df_filtered.loc[df_filtered['Loan_per_HH'].idxmax(), 'Desa']
+    st.metric("Saturasi Tertinggi", f"{max_desa}", f"Rp {max_loan:,.1f} Juta/KK")
 
-# --- GEOSPATIAL MAP ---
+# --- QUADRANT STRATEGY CHART ---
 st.markdown("---")
-st.subheader(f"📍 Peta Sebaran Potensi di {selected_kab}")
+st.subheader("🎯 Matriks Strategi: Potensi vs Saturasi")
+st.info("Grafik ini memetakan posisi setiap desa. Arahkan kursor untuk melihat detail.")
 
-# Color mapping logic
-def get_color(val):
-    if val == 'High': return '#00cc96' # Green
-    elif val == 'Medium High': return '#636efa' # Blue
-    elif val == 'Medium Low': return '#ffa15a' # Orange
-    else: return '#ef553b' # Red
+quadrant_chart = alt.Chart(df_filtered).mark_circle(size=100).encode(
+    x=alt.X('Skor_Potensi', title='Skor Potensi Ekonomi (Makin Kanan Makin Bagus)'),
+    y=alt.Y('Loan_per_HH', title='Tingkat Saturasi (Pinjaman Juta/KK)'),
+    color=alt.Color('Strategy_Quadrant', 
+                    scale=alt.Scale(domain=['💎 Hidden Gem (Grow)', '⚔️ Red Ocean (Compete)', '⚠️ High Risk (Avoid)', '💤 Dormant (Monitor)'],
+                                    range=['#00CC96', '#636EFA', '#EF553B', '#B8B8B8'])),
+    tooltip=['Desa', 'Kecamatan', 'Skor_Potensi', 'Loan_per_HH', 'Total_Pinjaman', 'Strategy_Quadrant']
+).properties(height=500).interactive()
 
-df_filtered['color'] = df_filtered['Kelas_Potensi'].apply(get_color)
+# Add Reference Lines (Averages)
+rule_x = alt.Chart(df_filtered).mark_rule(color='gray', strokeDash=[5,5]).encode(x='mean(Skor_Potensi)')
+rule_y = alt.Chart(df_filtered).mark_rule(color='gray', strokeDash=[5,5]).encode(y='mean(Loan_per_HH)')
 
-# Map Visualization using Streamlit Map
-st.map(df_filtered, latitude='lat', longitude='lon', color='color', size=20, zoom=10)
-st.caption("Warna merepresentasikan Kelas Potensi (Hijau=High, Merah=Low)")
+st.altair_chart(quadrant_chart + rule_x + rule_y, use_container_width=True)
 
-# --- CHARTS ---
+# --- SATURATION MAP ---
 st.markdown("---")
-col_chart1, col_chart2 = st.columns(2)
+col_map, col_list = st.columns([2, 1])
 
-with col_chart1:
-    st.subheader("📊 Pinjaman vs Simpanan (LDR Proxy)")
-    chart = alt.Chart(df_filtered).mark_circle(size=60).encode(
-        x=alt.X('Total_Pinjaman', title='Total Pinjaman'),
-        y=alt.Y('Total_Simpanan', title='Total Simpanan'),
-        color='Kelas_Potensi',
-        tooltip=['Desa', 'Kecamatan', 'Total_Pinjaman', 'Total_Simpanan', 'Industri_Mikro']
-    ).interactive()
-    st.altair_chart(chart, use_container_width=True)
-
-with col_chart2:
-    st.subheader("🏭 Sebaran Industri Mikro")
-    bar_chart = alt.Chart(df_filtered).mark_bar().encode(
-        x=alt.X('Industri_Mikro', bin=True),
-        y='count()',
-        color='Kelas_Potensi'
-    )
-    st.altair_chart(bar_chart, use_container_width=True)
-
-# -----------------------------------------------------------------------------
-# 5. SIMULATION ENGINE (FEATURE ENGINEERING DEMO)
-# -----------------------------------------------------------------------------
-st.markdown("---")
-st.subheader("🧮 Geo-Credit Scoring Simulator")
-st.write("Simulasi skor risiko untuk nasabah baru berdasarkan lokasi desa mereka.")
-
-with st.expander("Buka Simulator"):
-    sim_col1, sim_col2 = st.columns(2)
+with col_map:
+    st.subheader("📍 Peta Panas Saturasi (Risk Map)")
     
-    with sim_col1:
-        target_desa = st.selectbox("Pilih Desa Lokasi Usaha", df_filtered['Desa'].unique())
-        nasabah_omzet = st.number_input("Omzet Bulanan Nasabah (Juta Rp)", min_value=1.0, value=10.0)
+    # Color mapping for map
+    def get_sat_color(val):
+        if val == 'High Saturation (Overbanked)': return '#ff0000' # Red
+        elif val == 'Optimal': return '#ffa500' # Orange
+        else: return '#008000' # Green
         
-    # Retrieve Desa Data
-    desa_data = df_filtered[df_filtered['Desa'] == target_desa].iloc[0]
+    df_filtered['sat_color'] = df_filtered['Status_Saturasi'].apply(get_sat_color)
     
-    # SIMPLE SCORING LOGIC (HYBRID)
-    # 1. Location Score (From Data) -> Normalized 0-100
-    loc_score = desa_data['Attractiveness_Score'] 
-    
-    # 2. Financial Score (Dummy Logic for Prototype)
-    # Asumsi: Omzet > 50 Juta skor bagus
-    fin_score = min(nasabah_omzet * 2, 100) 
-    
-    # 3. Hybrid Score (60% Financial + 40% Location)
-    final_score = (0.6 * fin_score) + (0.4 * loc_score)
-    
-    with sim_col2:
-        st.metric("Skor Lokasi (External)", f"{loc_score:.1f}/100")
-        st.metric("Skor Kapasitas (Internal)", f"{fin_score:.1f}/100")
-        
-        # Risk Grade
-        if final_score >= 80: grade, color = "Low Risk (A)", "green"
-        elif final_score >= 50: grade, color = "Medium Risk (B)", "orange"
-        else: grade, color = "High Risk (C)", "red"
-        
-        st.markdown(f"### Final Geo-Score: :{color}[{final_score:.1f}]")
-        st.markdown(f"**Rekomendasi:** {grade}")
+    st.map(df_filtered, latitude='lat', longitude='lon', color='sat_color', size=25, zoom=10)
+    st.caption("Merah = Jenuh (Risiko Tinggi), Hijau = Masih Kosong (Peluang)")
 
-# Footer
+with col_list:
+    st.subheader("📋 Top 10 Desa 'Hidden Gems'")
+    st.markdown("Prioritas untuk penetrasi pasar baru.")
+    
+    hidden_gems = df_filtered[df_filtered['Strategy_Quadrant'] == '💎 Hidden Gem (Grow)']
+    top_gems = hidden_gems.nlargest(10, 'Skor_Potensi')[['Desa', 'Kecamatan', 'Skor_Potensi', 'Loan_per_HH']]
+    
+    st.dataframe(top_gems, hide_index=True)
+
+# --- DETAIL DATA TABLE ---
 st.markdown("---")
-st.caption("Developed by Tio Brain | Prototype v1.0")
+with st.expander("Lihat Data Lengkap Per Desa"):
+    st.dataframe(df_filtered[['Desa', 'Kecamatan', 'Skor_Potensi', 'Total_Pinjaman', 'Jumlah_KK', 'Loan_per_HH', 'Status_Saturasi', 'Strategy_Quadrant']])
+
+st.markdown("---")
+st.caption("Developed by Tio Brain | Risk Modelling & Strategy Framework")
