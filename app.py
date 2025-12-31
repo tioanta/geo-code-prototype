@@ -359,7 +359,7 @@ with tab4:
 # ================= TAB 5: PENGECEKAN KEWAJARAN (VALIDATION ENGINE) =================
 with tab5:
     st.markdown("### ✅ Pengecekan Tingkat Kewajaran (Validation Engine)")
-    st.info("Fitur untuk Mantri memvalidasi inputan pengajuan kredit berdasarkan benchmark data historis (Level 1-3).")
+    st.info("Fitur untuk Mantri memvalidasi inputan pengajuan kredit berdasarkan benchmark data historis (Level 1-3) dari file Excel.")
 
     # --- 1. SELECTION PANEL ---
     with st.container():
@@ -439,17 +439,18 @@ with tab5:
                 level_badge = '<span style="background-color:#ffebee; color:#c62828; padding:3px 8px; border-radius:4px; font-weight:bold;">TIDAK WAJAR</span>'
                 border_color = "#e57373" # Red
 
+            # [CHANGE] All text colors forced to BLACK (#000000)
             html = f"""
             <div style="border: 2px solid {border_color}; padding: 15px; border-radius: 8px; margin-bottom: 15px; background-color: #fafafa;">
-                <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px; display: flex; justify-content: space-between;">
+                <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px; display: flex; justify-content: space-between; color: #000000;">
                     <span>{level_name}</span>
                     {level_badge}
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
-                    <div><strong>Omzet:</strong><br>{status_omzet}<br><span style="color:#666">Max: {max_omzet:,.0f}</span></div>
-                    <div><strong>HPP:</strong><br>{status_hpp}<br><span style="color:#666">Max: {max_hpp:,.0f}</span></div>
-                    <div><strong>Laba:</strong><br>{status_laba}<br><span style="color:#666">Max: {max_laba:,.0f}</span></div>
-                    <div style="background-color: #f5f5f5; padding: 5px; border-radius: 4px; border-left: 3px solid #000000;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; font-size: 13px; color: #000000;">
+                    <div><strong>Omzet:</strong><br>{status_omzet}<br><span style="color:#000000">Max: {max_omzet:,.0f}</span></div>
+                    <div><strong>HPP:</strong><br>{status_hpp}<br><span style="color:#000000">Max: {max_hpp:,.0f}</span></div>
+                    <div><strong>Laba:</strong><br>{status_laba}<br><span style="color:#000000">Max: {max_laba:,.0f}</span></div>
+                    <div style="background-color: #f5f5f5; padding: 5px; border-radius: 4px; border-left: 3px solid #000;">
                         <strong>Plafond yang Wajar:</strong><br>
                         <span style="color: #000000; font-size: 15px; font-weight: bold;">Rp {max_plafond:,.0f}</span>
                     </div>
@@ -482,4 +483,4 @@ with tab5:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v12.5 | Final Validation Engine with Explicit Status")
+st.caption("Geo-Credit Intelligence Framework v12.6 | Validation Engine (High Contrast)")
