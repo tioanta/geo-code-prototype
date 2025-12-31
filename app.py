@@ -39,7 +39,7 @@ st.markdown("""
         background-color: #e8f0fe; border-left: 5px solid #1a73e8; padding: 15px; border-radius: 5px; margin-bottom: 20px; color: #000000 !important;
     }
     
-    /* Sentiment Winner Box (Style v2.0) */
+    /* Winner Box */
     .winner-box {
         background-color: #e6fffa; border: 1px solid #b2f5ea; padding: 20px; border-radius: 10px; color: #234e52;
     }
@@ -158,10 +158,10 @@ def get_hex_risk(score):
     else: return [179, 0, 0, 200] # Dark Red
 
 def get_hex_potential(score):
-    if score > 80: return '#00cc96'
-    elif score > 60: return '#636efa'
-    elif score > 40: return '#ab63fa'
-    else: return '#d3d3d3'
+    if score > 80: return '#00cc96' # Bright Green
+    elif score > 60: return '#636efa' # Blue
+    elif score > 40: return '#ab63fa' # Purple
+    else: return '#d3d3d3' # Grey
 
 df_filtered['color_risk_list'] = df_filtered['Final_Risk_Score'].apply(get_hex_risk)
 df_filtered['color_pot_hex'] = df_filtered['Skor_Potensi'].apply(get_hex_potential)
@@ -190,7 +190,7 @@ with tab1:
 
     st.markdown("---")
     
-    # 2. MARKET SENTIMENT ENGINE (Versi 2.0 Feature)
+    # 2. MARKET SENTIMENT ENGINE
     st.subheader("⭐ Market Sentiment Engine & Insight")
     
     # Automated Insight Box
@@ -208,32 +208,31 @@ with tab1:
     # Top Sector Analysis
     sent_col1, sent_col2 = st.columns([1, 2])
     
-    # Calculate Top Sector
     sec_stats = df_filtered.groupby('Sektor_Dominan').agg({
         'Sentiment_Score': 'mean',
         'Review_Count': 'mean'
     }).reset_index().sort_values('Sentiment_Score', ascending=False)
     
-    top_sector = sec_stats.iloc[0]
-    
-    with sent_col1:
-        st.markdown(f"""
-        <div class="winner-box">
-            <h4>🏆 Top Sector Winner</h4>
-            <h2>{top_sector['Sektor_Dominan']}</h2>
-            <p>Rating Rata-rata: <b>{top_sector['Sentiment_Score']:.1f} / 5.0</b></p>
-            <p><i>"Sektor paling direkomendasikan berdasarkan kepuasan pasar."</i></p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with sent_col2:
-        chart_sent_bar = alt.Chart(sec_stats.head(5)).mark_bar().encode(
-            x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0]), title='Rata-rata Rating'),
-            y=alt.Y('Sektor_Dominan', sort='-x', title='Sektor'),
-            color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'), legend=None),
-            tooltip=['Sektor_Dominan', 'Sentiment_Score']
-        ).properties(height=200)
-        st.altair_chart(chart_sent_bar, use_container_width=True)
+    if not sec_stats.empty:
+        top_sector = sec_stats.iloc[0]
+        with sent_col1:
+            st.markdown(f"""
+            <div class="winner-box">
+                <h4>🏆 Top Sector Winner</h4>
+                <h2>{top_sector['Sektor_Dominan']}</h2>
+                <p>Rating Rata-rata: <b>{top_sector['Sentiment_Score']:.1f} / 5.0</b></p>
+                <p><i>"Sektor paling direkomendasikan."</i></p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with sent_col2:
+            chart_sent_bar = alt.Chart(sec_stats.head(5)).mark_bar().encode(
+                x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0]), title='Rata-rata Rating'),
+                y=alt.Y('Sektor_Dominan', sort='-x', title='Sektor'),
+                color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'), legend=None),
+                tooltip=['Sektor_Dominan', 'Sentiment_Score']
+            ).properties(height=200)
+            st.altair_chart(chart_sent_bar, use_container_width=True)
 
     st.markdown("---")
 
@@ -247,17 +246,11 @@ with tab1:
     
     with col_list:
         st.subheader("💎 Top Hidden Gems (Unserved)")
-        st.caption("Desa dengan potensi tinggi namun penetrasi kredit masih rendah.")
-        
-        # Slider interaktif
         top_n = st.slider("Jumlah Desa:", 3, 20, 5)
         
-        # Logic: Filter Hidden Gems
         gems = df_filtered[df_filtered['Strategy_Quadrant'] == 'Hidden Gem (Grow)']
         if not gems.empty:
-            # Sort by Est_Unserved_KK (Potensi KK Belum Pinjam)
             top_gems = gems.nlargest(top_n, 'Est_Unserved_KK')[['Desa', 'Kecamatan', 'Est_Unserved_KK', 'Skor_Potensi']]
-            
             st.dataframe(
                 top_gems, 
                 hide_index=True, 
@@ -268,18 +261,49 @@ with tab1:
                 }
             )
         else:
-            st.warning("Belum ada area Hidden Gems di wilayah ini.")
+            st.warning("Belum ada area Hidden Gems.")
 
 # ================= TAB 2: GROWTH INTELLIGENCE =================
 with tab2:
-    st.markdown("### 🚀 Analisis Mendalam: Potensi Pertumbuhan Per Desa")
-    st.info("Fokus pada karakteristik ekonomi dan infrastruktur desa untuk ekspansi.")
+    st.markdown("### 🚀 Analisis Potensi Pertumbuhan")
+    st.info("Visualisasi dan analisis detail area dengan potensi ekonomi tinggi.")
 
-    # Table Detail Growth
+    # 1. VISUALISASI PETA & HISTOGRAM
+    c_g1, c_g2 = st.columns([2, 1])
+    
+    with c_g1:
+        st.subheader("🗺️ Peta Sebaran Potensi")
+        st.caption("Hijau = Potensi Tinggi. Biru = Menengah. Abu = Rendah.")
+        # Peta Potensi (Sama seperti Executive Summary)
+        st.map(df_filtered, latitude='lat', longitude='lon', color='color_pot_hex', size=30, zoom=10)
+        
+    with c_g2:
+        st.subheader("📊 Kategori Potensi Desa")
+        
+        # Categorize Potential Logic
+        def categorize_pot(x):
+            if x > 70: return 'Tinggi (>70)'
+            elif x > 40: return 'Sedang (40-70)'
+            else: return 'Rendah (<40)'
+            
+        df_filtered['Kategori_Potensi'] = df_filtered['Skor_Potensi'].apply(categorize_pot)
+        
+        # Histogram Chart
+        hist_pot = alt.Chart(df_filtered).mark_bar().encode(
+            x=alt.X('Kategori_Potensi', sort=['Tinggi (>70)', 'Sedang (40-70)', 'Rendah (<40)'], title='Kategori Potensi'),
+            y=alt.Y('count()', title='Jumlah Desa'),
+            color=alt.Color('Kategori_Potensi', scale=alt.Scale(domain=['Tinggi (>70)', 'Sedang (40-70)', 'Rendah (<40)'], range=['#00cc96', '#636efa', '#d3d3d3'])),
+            tooltip=['Kategori_Potensi', 'count()']
+        ).properties(height=300)
+        st.altair_chart(hist_pot, use_container_width=True)
+
+    st.markdown("---")
+    
+    # 2. DETAIL TABLE
+    st.subheader("📋 Detail Desa: Growth Opportunities")
     growth_cols = ['Desa', 'Kecamatan', 'Skor_Potensi', 'Sektor_Dominan', 'Jumlah_KK', 'Est_Unserved_KK']
     growth_df = df_filtered.sort_values(by='Skor_Potensi', ascending=False)[growth_cols].copy()
     
-    # Menambahkan Kolom Analisis Tekstual
     def analyze_growth(row):
         return f"Potensi tinggi di sektor {row['Sektor_Dominan']} dengan basis {row['Jumlah_KK']} KK."
     
@@ -292,7 +316,7 @@ with tab2:
         column_config={
             "Skor_Potensi": st.column_config.NumberColumn("Skor Ekonomi (0-100)", format="%.1f"),
             "Jumlah_KK": st.column_config.NumberColumn("Total Keluarga"),
-            "Est_Unserved_KK": st.column_config.NumberColumn("Est. KK Belum Pinjam", help="Estimasi jumlah KK yang belum terjangkau kredit"),
+            "Est_Unserved_KK": st.column_config.NumberColumn("Est. KK Belum Pinjam"),
             "Analisis Singkat": st.column_config.TextColumn("Highlight Analis", width="large")
         }
     )
@@ -309,7 +333,7 @@ with tab3:
             y='count()', color=alt.value('#ffa15a'), tooltip=['count()']
         ).properties(height=250)
         st.altair_chart(hist, use_container_width=True)
-        st.caption("Grafik yang condong ke kanan menandakan area yang mulai jenuh (over-leveraged).")
+        st.caption("Grafik yang condong ke kanan menandakan area yang mulai jenuh.")
 
     with col_sat2:
         st.subheader("⚔️ Komposisi Kuadran")
@@ -321,12 +345,10 @@ with tab3:
             tooltip=["Kategori", "Jumlah"]
         )
         st.altair_chart(pie, use_container_width=True)
-        st.caption("Proporsi wilayah berdasarkan strategi pertumbuhan vs pertahanan.")
 
     st.markdown("---")
     st.subheader("📋 Kategorisasi Beban Utang Per Desa")
     
-    # Logic: Categorize Debt Load (Textual)
     def categorize_debt(val):
         if val < 10: return "🟢 Ringan (< 10 Juta)"
         elif val < 30: return "🟡 Menengah (10-30 Juta)"
@@ -356,7 +378,6 @@ with tab4:
         st.subheader("🗺️ Peta Risiko Interaktif")
         st.caption("Arahkan mouse ke titik untuk melihat detail risiko.")
         
-        # PYDECK MAP FOR RISK (Hover Support)
         view_state = pdk.ViewState(
             latitude=df_filtered['lat'].mean(),
             longitude=df_filtered['lon'].mean(),
@@ -398,12 +419,11 @@ with tab4:
     st.markdown("---")
     st.subheader("📋 Interpretasi Skor Risiko")
     
-    # Logic: Interpretasi Score Textual
     def interpret_score(score):
-        if score > 80: return "⛔ KRITIS: Stop Lending, Fokus Penagihan"
-        elif score > 60: return "⚠️ TINGGI: Batasi Plafond, Wajib Agunan Fisik"
-        elif score > 40: return "✋ SEDANG: Perlu Survey Berlapis"
-        else: return "✅ RENDAH: Aman untuk Growth"
+        if score > 80: return "⛔ KRITIS: Stop Lending"
+        elif score > 60: return "⚠️ TINGGI: Batasi Plafond"
+        elif score > 40: return "✋ SEDANG: Perlu Survey"
+        else: return "✅ RENDAH: Aman"
         
     risk_table = df_filtered[['Desa', 'Final_Risk_Score', 'Risk_Trigger_Count', 'Flag_Konflik', 'Flag_Bencana']].copy()
     risk_table['Interpretasi Kebijakan'] = risk_table['Final_Risk_Score'].apply(interpret_score)
@@ -431,7 +451,6 @@ with tab5:
         with col_sim1:
             st.markdown("#### 1. Input Data Usaha")
             
-            # Pilihan Sektor
             avail_sectors = df_filtered['Sektor_Dominan'].unique()
             sim_sector = st.selectbox("Sektor Usaha Nasabah", avail_sectors)
             
@@ -440,7 +459,6 @@ with tab5:
             sim_lama = st.slider("Lama Usaha Berjalan (Tahun)", 0, 30, 3)
             sim_jaminan = st.selectbox("Jenis Agunan", ["Tanpa Agunan", "BPKB Motor", "BPKB Mobil", "Sertifikat Tanah/Rumah"])
             
-            # BENCHMARK SEKTOR
             sector_stats = df_filtered[df_filtered['Sektor_Dominan'] == sim_sector]
             avg_sec_risk = sector_stats['Final_Risk_Score'].mean()
             avg_sec_pot = sector_stats['Skor_Potensi'].mean()
@@ -465,7 +483,6 @@ with tab5:
         
         final_score = (0.3 * loc_score) + (0.4 * cap_score) + (0.2 * coll_score) + (0.1 * (sentiment_loc/5)*100)
         
-        # Penalties based on Sector Benchmark
         note_sector = "✅ Sektor Aman"
         if avg_sec_risk > 60:
             final_score -= 10
@@ -493,4 +510,4 @@ with tab5:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v11.1 | Complete Edition")
+st.caption("Geo-Credit Intelligence Framework v11.2 | Enhanced Visualization")
