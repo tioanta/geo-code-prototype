@@ -359,7 +359,7 @@ with tab4:
 # ================= TAB 5: PENGECEKAN KEWAJARAN (VALIDATION ENGINE) =================
 with tab5:
     st.markdown("### ✅ Pengecekan Tingkat Kewajaran (Validation Engine)")
-    st.info("Fitur untuk Mantri memvalidasi inputan pengajuan kredit menggunakan 3 Level Benchmark (Provinsi, Sektor, Kabupaten).")
+    st.info("Fitur untuk Mantri memvalidasi inputan pengajuan kredit berdasarkan benchmark data historis (Level 1-3).")
 
     # --- 1. SELECTION PANEL ---
     with st.container():
@@ -425,63 +425,61 @@ with tab5:
             max_plafond = row['PLAFOND_MAX_WAJAR']
             
             # Check Status
-            status_omzet = "✅ WAJAR" if inputs['omzet'] <= max_omzet else "❌ OVER"
-            status_hpp = "✅ WAJAR" if inputs['hpp'] <= max_hpp else "❌ OVER"
-            status_laba = "✅ WAJAR" if inputs['laba'] <= max_laba else "❌ OVER"
+            status_omzet = "✅ WAJAR" if inputs['omzet'] <= max_omzet else "❌ TIDAK WAJAR"
+            status_hpp = "✅ WAJAR" if inputs['hpp'] <= max_hpp else "❌ TIDAK WAJAR"
+            status_laba = "✅ WAJAR" if inputs['laba'] <= max_laba else "❌ TIDAK WAJAR"
             
+            # Overall Status for the Level
+            is_all_valid = (inputs['omzet'] <= max_omzet) and (inputs['hpp'] <= max_hpp) and (inputs['laba'] <= max_laba)
+            
+            if is_all_valid:
+                level_badge = '<span style="background-color:#e8f5e9; color:#2e7d32; padding:3px 8px; border-radius:4px; font-weight:bold;">WAJAR</span>'
+                border_color = "#4caf50" # Green
+            else:
+                level_badge = '<span style="background-color:#ffebee; color:#c62828; padding:3px 8px; border-radius:4px; font-weight:bold;">TIDAK WAJAR</span>'
+                border_color = "#e57373" # Red
+
             html = f"""
-            <div style="border: 1px solid #eee; padding: 15px; border-radius: 8px; margin-bottom: 10px; background-color: #fafafa;">
-                <div style="font-weight: bold; color: #1565c0; margin-bottom: 8px;">{level_name}</div>
+            <div style="border: 2px solid {border_color}; padding: 15px; border-radius: 8px; margin-bottom: 15px; background-color: #fafafa;">
+                <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px; display: flex; justify-content: space-between;">
+                    <span>{level_name}</span>
+                    {level_badge}
+                </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
                     <div><strong>Omzet:</strong><br>{status_omzet}<br><span style="color:#666">Max: {max_omzet:,.0f}</span></div>
                     <div><strong>HPP:</strong><br>{status_hpp}<br><span style="color:#666">Max: {max_hpp:,.0f}</span></div>
                     <div><strong>Laba:</strong><br>{status_laba}<br><span style="color:#666">Max: {max_laba:,.0f}</span></div>
-                    <div style="background-color: #e8f5e9; padding: 5px; border-radius: 4px;">
-                        <strong>Rekomendasi Plafond:</strong><br>
-                        <span style="color: #2e7d32; font-size: 14px; font-weight: bold;">Rp {max_plafond:,.0f}</span>
+                    <div style="background-color: #f5f5f5; padding: 5px; border-radius: 4px; border-left: 3px solid #000;">
+                        <strong>Plafond yang Wajar:</strong><br>
+                        <span style="color: #000000; font-size: 15px; font-weight: bold;">Rp {max_plafond:,.0f}</span>
                     </div>
                 </div>
             </div>
             """
-            return html, max_plafond
+            return html
 
         user_inputs = {'omzet': in_omzet, 'hpp': in_hpp, 'laba': in_laba}
         
         # 1. Check Level 1 (Provinsi + Sektor)
         mask_l1 = (ref_l1['Provinsi Usaha'] == sel_prov) & (ref_l1['Sektor Ekonomi'] == sel_sec)
-        res_l1 = render_level_check("Level 1: Provinsi & Sektor (Makro)", ref_l1, mask_l1, user_inputs)
+        res_l1 = render_level_check("Level 1: Provinsi & Sektor", ref_l1, mask_l1, user_inputs)
         
         # 2. Check Level 2 (Provinsi + Sub Sektor)
         mask_l2 = (ref_l2['Provinsi Usaha'] == sel_prov) & (ref_l2['Sektor Ekonomi'] == sel_sec) & (ref_l2['Sub Sektor Ekonomi'] == sel_sub)
-        res_l2 = render_level_check("Level 2: Provinsi & Sub Sektor (Menengah)", ref_l2, mask_l2, user_inputs)
+        res_l2 = render_level_check("Level 2: Provinsi & Sub Sektor", ref_l2, mask_l2, user_inputs)
         
         # 3. Check Level 3 (Kabupaten + Sub Sektor) - MOST SPECIFIC
         mask_l3 = (ref_l3['Provinsi Usaha'] == sel_prov) & (ref_l3['Kabupaten/kota'] == sel_kab) & (ref_l3['Sektor Ekonomi'] == sel_sec) & (ref_l3['Sub Sektor Ekonomi'] == sel_sub)
-        res_l3 = render_level_check(f"Level 3: {sel_kab} & Sub Sektor (Spesifik)", ref_l3, mask_l3, user_inputs)
+        res_l3 = render_level_check(f"Level 3: {sel_kab} & Sub Sektor", ref_l3, mask_l3, user_inputs)
         
-        # Render Results
-        if res_l1: st.markdown(res_l1[0], unsafe_allow_html=True)
-        if res_l2: st.markdown(res_l2[0], unsafe_allow_html=True)
-        if res_l3: st.markdown(res_l3[0], unsafe_allow_html=True)
+        # Render Results Stacked
+        if res_l1: st.markdown(res_l1, unsafe_allow_html=True)
+        if res_l2: st.markdown(res_l2, unsafe_allow_html=True)
+        if res_l3: st.markdown(res_l3, unsafe_allow_html=True)
         
-        # Final Recommendation Logic (Prioritize L3 -> L2 -> L1)
-        final_plafond = 0
-        source = ""
-        if res_l3: 
-            final_plafond = res_l3[1]
-            source = "Level 3 (Spesifik)"
-        elif res_l2:
-            final_plafond = res_l2[1]
-            source = "Level 2 (Provinsi)"
-        elif res_l1:
-            final_plafond = res_l1[1]
-            source = "Level 1 (Makro)"
-            
-        if final_plafond > 0:
-            st.success(f"🎯 **Kesimpulan Akhir ({source}):** Batas Maksimal Plafond yang Direkomendasikan adalah **Rp {final_plafond:,.0f}**")
-        else:
+        if not (res_l1 or res_l2 or res_l3):
             st.warning("⚠️ Data benchmark tidak ditemukan untuk kombinasi wilayah/sektor ini.")
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v12.4 | Final Validation Engine with Excel Support")
+st.caption("Geo-Credit Intelligence Framework v12.5 | Final Validation Engine with Explicit Status")
