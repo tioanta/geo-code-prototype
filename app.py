@@ -44,35 +44,35 @@ st.markdown("""
         background-color: #e6fffa; border: 1px solid #b2f5ea; padding: 20px; border-radius: 10px; color: #234e52;
     }
     
-    /* Validation Box */
+    /* Validation Cards */
     .validation-card {
-        background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 10px;
+        background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px;
     }
-    .status-pass { color: #008000; font-weight: bold; }
-    .status-fail { color: #d32f2f; font-weight: bold; }
+    .level-badge {
+        background-color: #e3f2fd; color: #1565c0; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-right: 5px;
+    }
+    .status-pass { color: #2e7d32; font-weight: bold; }
+    .status-fail { color: #c62828; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. DATA ENGINE (LOADER EXCEL & CSV)
+# 2. DATA ENGINE (LOADER CSV)
 # -----------------------------------------------------------------------------
 @st.cache_data
 def load_data_engine():
     data = {}
     try:
-        # 1. Load Main Data (Tetap CSV)
+        # 1. Load Main Data
         data['main'] = pd.read_csv('Prototype Jawa Tengah.csv')
         
-        # 2. Load Validation Data (Sekarang dari EXCEL Multiple Sheets)
-        excel_file = 'Kewajaran_Omzet_All.xlsx'
-        
-        # Membaca sheet spesifik
-        data['level1'] = pd.read_excel(excel_file, sheet_name='Level 1')
-        data['level2'] = pd.read_excel(excel_file, sheet_name='Level 2')
-        data['level3'] = pd.read_excel(excel_file, sheet_name='Level 3')
+        # 2. Load Validation Data (CSV Files)
+        # Note: Menggunakan nama file CSV sesuai upload user
+        data['level1'] = pd.read_csv('Kewajaran_Omzet_All.xlsx - Level 1.csv')
+        data['level2'] = pd.read_csv('Kewajaran_Omzet_All.xlsx - Level 2.csv')
+        data['level3'] = pd.read_csv('Kewajaran_Omzet_All.xlsx - Level 3.csv')
         
         # --- DATA PRE-PROCESSING ---
-        
         # Clean Columns for Main Data
         data['main'].columns = [col.replace('potensi_wilayah_kel_podes_pdrb_sekda_current.', '') for col in data['main'].columns]
         
@@ -136,7 +136,6 @@ def load_data_engine():
         data['main']['Est_Unserved_KK'] = (data['main']['Jumlah_KK'] * (1 - saturation_ratio)).astype(int)
         
     except Exception as e:
-        st.error(f"Error loading data: {e}")
         return None
         
     return data
@@ -144,11 +143,11 @@ def load_data_engine():
 # LOAD DATA
 dataset = load_data_engine()
 if dataset is None:
-    st.error("❌ Data tidak ditemukan. Pastikan file 'Prototype Jawa Tengah.csv' dan 'Kewajaran_Omzet_All.xlsx' ada di folder yang sama.")
+    st.error("❌ Data tidak ditemukan. Pastikan file CSV (Prototype & Kewajaran Omzet Level 1-3) ada.")
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR CONTROLS (RESTORED FROM v11.7)
+# 3. SIDEBAR CONTROLS (DASHBOARD FILTER)
 # -----------------------------------------------------------------------------
 st.sidebar.title("🎛️ Geo-Control Panel")
 
@@ -167,7 +166,7 @@ if not selected_kec:
     st.warning("⚠️ Mohon pilih minimal satu kecamatan.")
     st.stop()
 
-# df_filtered inilah yang akan dipakai di Tab 1-4
+# df_filtered untuk Tab 1-4
 df_filtered = df_kab[df_kab['Kecamatan'].isin(selected_kec)].copy()
 
 st.sidebar.markdown("---")
@@ -238,7 +237,8 @@ with tab1:
             <div class="winner-box">
                 <h4>🏆 Top Sector Winner</h4>
                 <h2>{top_sector['Sektor_Dominan']}</h2>
-                <p>Rating: <b>{top_sector['Sentiment_Score']:.1f} / 5.0</b></p>
+                <p>Rating Rata-rata: <b>{top_sector['Sentiment_Score']:.1f} / 5.0</b></p>
+                <p><i>"Sektor paling direkomendasikan."</i></p>
             </div>
             """, unsafe_allow_html=True)
         with sent_col2:
@@ -361,7 +361,7 @@ with tab4:
 # ================= TAB 5: PENGECEKAN KEWAJARAN (VALIDATION ENGINE) =================
 with tab5:
     st.markdown("### ✅ Pengecekan Tingkat Kewajaran (Validation Engine)")
-    st.info("Fitur untuk Mantri memvalidasi inputan pengajuan kredit berdasarkan benchmark data historis (Level 1-3) dari file Excel.")
+    st.info("Modul ini memvalidasi inputan Mantri menggunakan 3 Level Benchmark (Provinsi -> Sektor -> Kabupaten/Sub-Sektor).")
 
     # --- 1. SELECTION PANEL ---
     with st.container():
@@ -397,112 +397,93 @@ with tab5:
     # --- 2. INPUT PANEL ---
     with st.container():
         st.markdown('<div class="validation-card">', unsafe_allow_html=True)
-        st.markdown("#### 2. Input Data Pengajuan")
+        st.markdown("#### 2. Input Data Keuangan (Tanpa Plafond)")
         
-        c_in1, c_in2, c_in3, c_in4 = st.columns(4)
+        c_in1, c_in2, c_in3 = st.columns(3)
         with c_in1:
             in_omzet = st.number_input("Omzet (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
         with c_in2:
             in_hpp = st.number_input("HPP (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
         with c_in3:
             in_laba = st.number_input("Laba (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
-        with c_in4:
-            in_plafond = st.number_input("Plafond (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
             
-        btn_check = st.button("🔍 Cek Kewajaran", type="primary")
+        btn_check = st.button("🔍 Analisa Kewajaran & Rekomendasi", type="primary")
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- 3. VALIDATION ENGINE & RESULT ---
     if btn_check:
-        st.markdown("### 📊 Hasil Validasi")
+        st.markdown("### 📊 Hasil Analisa Multi-Level")
         
-        # --- LOOKUP LOGIC (Multi-Level Fallback) ---
-        
-        # Level 3 Search (Specific City)
-        match_l3 = ref_l3[
-            (ref_l3['Provinsi Usaha'] == sel_prov) & 
-            (ref_l3['Kabupaten/kota'] == sel_kab) & 
-            (ref_l3['Sektor Ekonomi'] == sel_sec) & 
-            (ref_l3['Sub Sektor Ekonomi'] == sel_sub)
-        ]
-        
-        # Level 2 Search (Fallback - Province & Sub Sector)
-        match_l2 = ref_l2[
-            (ref_l2['Provinsi Usaha'] == sel_prov) & 
-            (ref_l2['Sektor Ekonomi'] == sel_sec) & 
-            (ref_l2['Sub Sektor Ekonomi'] == sel_sub)
-        ]
-        
-        # Level 1 Search (Fallback - Province & Sector)
-        match_l1 = ref_l1[
-            (ref_l1['Provinsi Usaha'] == sel_prov) & 
-            (ref_l1['Sektor Ekonomi'] == sel_sec)
-        ]
-        
-        # Logic Hierarchy
-        if not match_l3.empty:
-            benchmark = match_l3.iloc[0]
-            source = f"Level 3 (Spesifik Kota {sel_kab})"
-        elif not match_l2.empty:
-            benchmark = match_l2.iloc[0]
-            source = f"Level 2 (Provinsi {sel_prov} - Sub Sektor)"
-        elif not match_l1.empty:
-            benchmark = match_l1.iloc[0]
-            source = f"Level 1 (Provinsi {sel_prov} - Sektor Umum)"
-        else:
-            st.error("Data benchmark tidak ditemukan untuk kombinasi ini.")
-            st.stop()
+        # Function to Render Level Card
+        def render_level_check(level_name, dataset, query_mask, inputs):
+            match = dataset[query_mask]
+            if match.empty:
+                return None
             
-        # Get Max Values
-        max_omzet = benchmark['OMZET_MAX_WAJAR']
-        max_hpp = benchmark['HPP_MAX_WAJAR']
-        max_laba = benchmark['LABA_MAX_WAJAR']
-        max_plafond = benchmark['PLAFOND_MAX_WAJAR']
-        
-        # Validation Function
-        def validate(val, limit, name):
-            is_valid = val <= limit
-            status_text = "WAJAR" if is_valid else "TIDAK WAJAR"
-            status_class = "status-pass" if is_valid else "status-fail"
-            diff = limit - val
+            row = match.iloc[0]
+            max_omzet = row['OMZET_MAX_WAJAR']
+            max_hpp = row['HPP_MAX_WAJAR']
+            max_laba = row['LABA_MAX_WAJAR']
+            max_plafond = row['PLAFOND_MAX_WAJAR']
             
-            st.markdown(f"""
-            <div style="border-bottom: 1px solid #eee; padding: 10px 0;">
-                <div style="display: flex; justify-content: space-between;">
-                    <span><strong>{name}</strong></span>
-                    <span class="{status_class}">{status_text}</span>
-                </div>
-                <div style="font-size: 13px; color: #666; margin-top: 5px;">
-                    Input: Rp {val:,.0f} | <strong>Max Wajar: Rp {limit:,.0f}</strong>
-                </div>
-                <div style="font-size: 12px; color: {'green' if is_valid else 'red'};">
-                    {'✅ Masih tersedia ruang: Rp {:,.0f}'.format(diff) if is_valid else '❌ Melebihi batas sebesar: Rp {:,.0f}'.format(abs(diff))}
+            # Check Status
+            status_omzet = "✅ WAJAR" if inputs['omzet'] <= max_omzet else "❌ OVER"
+            status_hpp = "✅ WAJAR" if inputs['hpp'] <= max_hpp else "❌ OVER"
+            status_laba = "✅ WAJAR" if inputs['laba'] <= max_laba else "❌ OVER"
+            
+            html = f"""
+            <div style="border: 1px solid #eee; padding: 15px; border-radius: 8px; margin-bottom: 10px; background-color: #fafafa;">
+                <div style="font-weight: bold; color: #1565c0; margin-bottom: 8px;">{level_name}</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
+                    <div><strong>Omzet:</strong><br>{status_omzet}<br><span style="color:#666">Max: {max_omzet:,.0f}</span></div>
+                    <div><strong>HPP:</strong><br>{status_hpp}<br><span style="color:#666">Max: {max_hpp:,.0f}</span></div>
+                    <div><strong>Laba:</strong><br>{status_laba}<br><span style="color:#666">Max: {max_laba:,.0f}</span></div>
+                    <div style="background-color: #e8f5e9; padding: 5px; border-radius: 4px;">
+                        <strong>Rekomendasi Plafond:</strong><br>
+                        <span style="color: #2e7d32; font-size: 14px; font-weight: bold;">Rp {max_plafond:,.0f}</span>
+                    </div>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
-            return is_valid
+            """
+            return html, max_plafond
 
-        # Display Results
-        c_res1, c_res2 = st.columns([2, 1])
+        user_inputs = {'omzet': in_omzet, 'hpp': in_hpp, 'laba': in_laba}
         
-        with c_res1:
-            st.markdown(f'<div class="validation-card"><h5>Rincian Komponen ({source})</h5>', unsafe_allow_html=True)
-            v1 = validate(in_omzet, max_omzet, "1. Omzet Usaha")
-            v2 = validate(in_hpp, max_hpp, "2. Harga Pokok Penjualan (HPP)")
-            v3 = validate(in_laba, max_laba, "3. Laba Usaha")
-            v4 = validate(in_plafond, max_plafond, "4. Plafond Pinjaman")
-            st.markdown('</div>', unsafe_allow_html=True)
+        # 1. Check Level 1 (Provinsi + Sektor)
+        mask_l1 = (ref_l1['Provinsi Usaha'] == sel_prov) & (ref_l1['Sektor Ekonomi'] == sel_sec)
+        res_l1 = render_level_check("Level 1: Provinsi & Sektor (Makro)", ref_l1, mask_l1, user_inputs)
+        
+        # 2. Check Level 2 (Provinsi + Sub Sektor)
+        mask_l2 = (ref_l2['Provinsi Usaha'] == sel_prov) & (ref_l2['Sektor Ekonomi'] == sel_sec) & (ref_l2['Sub Sektor Ekonomi'] == sel_sub)
+        res_l2 = render_level_check("Level 2: Provinsi & Sub Sektor (Menengah)", ref_l2, mask_l2, user_inputs)
+        
+        # 3. Check Level 3 (Kabupaten + Sub Sektor) - MOST SPECIFIC
+        mask_l3 = (ref_l3['Provinsi Usaha'] == sel_prov) & (ref_l3['Kabupaten/kota'] == sel_kab) & (ref_l3['Sektor Ekonomi'] == sel_sec) & (ref_l3['Sub Sektor Ekonomi'] == sel_sub)
+        res_l3 = render_level_check(f"Level 3: {sel_kab} & Sub Sektor (Spesifik)", ref_l3, mask_l3, user_inputs)
+        
+        # Render Results
+        if res_l1: st.markdown(res_l1[0], unsafe_allow_html=True)
+        if res_l2: st.markdown(res_l2[0], unsafe_allow_html=True)
+        if res_l3: st.markdown(res_l3[0], unsafe_allow_html=True)
+        
+        # Final Recommendation Logic (Prioritize L3 -> L2 -> L1)
+        final_plafond = 0
+        source = ""
+        if res_l3: 
+            final_plafond = res_l3[1]
+            source = "Level 3 (Spesifik)"
+        elif res_l2:
+            final_plafond = res_l2[1]
+            source = "Level 2 (Provinsi)"
+        elif res_l1:
+            final_plafond = res_l1[1]
+            source = "Level 1 (Makro)"
             
-        with c_res2:
-            st.markdown('<div class="validation-card"><h5>Kesimpulan Akhir</h5>', unsafe_allow_html=True)
-            if v1 and v2 and v3 and v4:
-                st.success("✅ **LOLOS VALIDASI**")
-                st.write("Seluruh komponen pengajuan berada dalam batas kewajaran data historis.")
-            else:
-                st.error("❌ **PERLU REVISI**")
-                st.write("Terdapat komponen yang melebihi batas kewajaran (Outlier). Mohon cek kembali inputan atau sertakan justifikasi kuat.")
-            st.markdown('</div>', unsafe_allow_html=True)
+        if final_plafond > 0:
+            st.success(f"🎯 **Kesimpulan Akhir ({source}):** Batas Maksimal Plafond yang Direkomendasikan adalah **Rp {final_plafond:,.0f}**")
+        else:
+            st.warning("⚠️ Data benchmark tidak ditemukan untuk kombinasi wilayah/sektor ini.")
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v12.2 | Full Sidebar Control & Excel Validation")
+st.caption("Geo-Credit Intelligence Framework v12.3 | Multi-Level Validation Engine")
