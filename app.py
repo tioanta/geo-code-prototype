@@ -39,6 +39,11 @@ st.markdown("""
         background-color: #e8f0fe; border-left: 5px solid #1a73e8; padding: 15px; border-radius: 5px; margin-bottom: 20px; color: #000000 !important;
     }
     
+    /* Winner Box */
+    .winner-box {
+        background-color: #e6fffa; border: 1px solid #b2f5ea; padding: 20px; border-radius: 10px; color: #234e52;
+    }
+    
     /* Validation Box */
     .validation-card {
         background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 10px;
@@ -142,20 +147,44 @@ if dataset is None:
     st.error("❌ Data tidak ditemukan. Pastikan file 'Prototype Jawa Tengah.csv' dan 'Kewajaran_Omzet_All.xlsx' ada di folder yang sama.")
     st.stop()
 
-df_filtered = dataset['main'] # Default for Tabs 1-4
+# -----------------------------------------------------------------------------
+# 3. SIDEBAR CONTROLS (RESTORED FROM v11.7)
+# -----------------------------------------------------------------------------
+st.sidebar.title("🎛️ Geo-Control Panel")
 
-# Color Helpers
+# Gunakan dataset['main'] sebagai basis data spasial
+df_main = dataset['main']
+
+all_kab = sorted(df_main['Kabupaten'].unique())
+selected_kab = st.sidebar.selectbox("Pilih Wilayah (Kabupaten)", all_kab, index=0)
+
+# Filter Kecamatan berdasarkan Kabupaten terpilih
+df_kab = df_main[df_main['Kabupaten'] == selected_kab]
+all_kec = sorted(df_kab['Kecamatan'].unique())
+selected_kec = st.sidebar.multiselect("Filter Kecamatan", all_kec, default=all_kec)
+
+if not selected_kec:
+    st.warning("⚠️ Mohon pilih minimal satu kecamatan.")
+    st.stop()
+
+# df_filtered inilah yang akan dipakai di Tab 1-4
+df_filtered = df_kab[df_kab['Kecamatan'].isin(selected_kec)].copy()
+
+st.sidebar.markdown("---")
+st.sidebar.info(f"📍 **Coverage:** {len(df_filtered)} Desa")
+
+# Color Helpers for Map
 def get_hex_risk(score):
-    if score < 20: return '#00cc96'
-    elif score < 40: return '#ffa15a'
-    elif score < 60: return '#ef553b'
-    else: return '#b30000'
+    if score < 20: return '#00cc96' # Green
+    elif score < 40: return '#ffa15a' # Orange
+    elif score < 60: return '#ef553b' # Red Orange
+    else: return '#b30000' # Dark Red
 
 def get_hex_potential(score):
-    if score > 80: return '#00cc96'
-    elif score > 60: return '#636efa'
-    elif score > 40: return '#ab63fa'
-    else: return '#d3d3d3'
+    if score > 80: return '#00cc96' # Bright Green
+    elif score > 60: return '#636efa' # Blue
+    elif score > 40: return '#ab63fa' # Purple
+    else: return '#d3d3d3' # Grey
 
 df_filtered['color_hex_risk'] = df_filtered['Final_Risk_Score'].apply(get_hex_risk)
 df_filtered['color_pot_hex'] = df_filtered['Skor_Potensi'].apply(get_hex_potential)
@@ -173,7 +202,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 # ================= TAB 1: EXECUTIVE SUMMARY =================
 with tab1:
-    st.markdown(f"### 📋 Ringkasan Strategis")
+    st.markdown(f"### 📋 Ringkasan Strategis: {selected_kab}")
     
     # KPI Metrics
     c1, c2, c3, c4 = st.columns(4)
@@ -193,7 +222,7 @@ with tab1:
     st.markdown(f"""
     <div class="insight-box">
         <b>💡 Automated Business Insights:</b><br>
-        Wilayah ini didorong oleh sektor <b>{dom_sector}</b> dengan potensi pertumbuhan <b>{pct_growth:.1f}%</b>.
+        Wilayah <b>{selected_kab}</b> didorong oleh sektor <b>{dom_sector}</b> dengan potensi pertumbuhan <b>{pct_growth:.1f}%</b>.
         Analisis sentimen menunjukkan sektor ini memiliki tingkat kepuasan tinggi.
     </div>
     """, unsafe_allow_html=True)
@@ -476,4 +505,4 @@ with tab5:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v12.1 | Validation Module with Excel Support")
+st.caption("Geo-Credit Intelligence Framework v12.2 | Full Sidebar Control & Excel Validation")
