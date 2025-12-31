@@ -82,7 +82,7 @@ def load_data_engine():
     df['Jumlah_KK'] = df['Jumlah_KK'].replace(0, 1) 
     df['Loan_per_HH'] = (df['Total_Pinjaman'] / df['Jumlah_KK']) / 1_000_000 
     
-    # Estimasi KK Belum Pinjam
+    # Estimasi KK Belum Pinjam (Market Size Proxy)
     saturation_ratio = (df['Loan_per_HH'] / 50.0).clip(0, 1)
     df['Est_Unserved_KK'] = (df['Jumlah_KK'] * (1 - saturation_ratio)).astype(int)
 
@@ -158,20 +158,13 @@ def get_hex_risk(score):
     else: return '#b30000' # Dark Red
 
 def get_hex_potential(score):
-    if score > 80: return '#00cc96'
-    elif score > 60: return '#636efa'
-    elif score > 40: return '#ab63fa'
-    else: return '#d3d3d3'
-
-def get_hex_saturation(val):
-    # Logic v3.0: Merah = Jenuh/High Risk, Hijau = Low Saturation
-    if val > 50: return '#ff0000' # Red (Saturated)
-    elif val > 20: return '#ffa500' # Orange
-    else: return '#008000' # Green (Opportunity)
+    if score > 80: return '#00cc96' # Bright Green
+    elif score > 60: return '#636efa' # Blue
+    elif score > 40: return '#ab63fa' # Purple
+    else: return '#d3d3d3' # Grey
 
 df_filtered['color_hex_risk'] = df_filtered['Final_Risk_Score'].apply(get_hex_risk)
 df_filtered['color_pot_hex'] = df_filtered['Skor_Potensi'].apply(get_hex_potential)
-df_filtered['color_sat_hex'] = df_filtered['Loan_per_HH'].apply(get_hex_saturation)
 
 # -----------------------------------------------------------------------------
 # 5. DASHBOARD TABS
@@ -188,7 +181,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.markdown(f"### 📋 Ringkasan Strategis: {selected_kab}")
     
-    # KPI Metrics
+    # 1. KPI Metrics
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Exposure", f"Rp {df_filtered['Total_Pinjaman'].sum()/1e9:,.1f} M")
     c2.metric("Avg Risk Score", f"{df_filtered['Final_Risk_Score'].mean():.1f}/100")
@@ -197,22 +190,28 @@ with tab1:
 
     st.markdown("---")
     
-    # Market Sentiment Engine
-    st.subheader("⭐ Market Sentiment Insight")
+    # 2. MARKET SENTIMENT ENGINE
+    st.subheader("⭐ Market Sentiment Engine & Insight")
+    
+    # Automated Insight Box
     pct_growth = (len(df_filtered[df_filtered['Strategy_Quadrant']=='Hidden Gem (Grow)']) / len(df_filtered)) * 100
     dom_sector = df_filtered['Sektor_Dominan'].mode()[0] if not df_filtered['Sektor_Dominan'].empty else "Umum"
     
     st.markdown(f"""
     <div class="insight-box">
         <b>💡 Automated Business Insights:</b><br>
-        Wilayah <b>{selected_kab}</b> memiliki potensi pertumbuhan <b>{pct_growth:.1f}%</b> di sektor <b>{dom_sector}</b>.
-        Sentimen pasar positif, namun perhatikan tingkat saturasi di zona perkotaan.
+        Wilayah <b>{selected_kab}</b> didorong oleh sektor <b>{dom_sector}</b> dengan potensi pertumbuhan <b>{pct_growth:.1f}%</b>.
+        Analisis sentimen menunjukkan sektor ini memiliki tingkat kepuasan tinggi, menjadikannya target ekspansi yang aman.
     </div>
     """, unsafe_allow_html=True)
     
-    # Top Sector Analysis Box
+    # Top Sector Analysis
     sent_col1, sent_col2 = st.columns([1, 2])
-    sec_stats = df_filtered.groupby('Sektor_Dominan').agg({'Sentiment_Score': 'mean', 'Review_Count': 'mean'}).reset_index().sort_values('Sentiment_Score', ascending=False)
+    
+    sec_stats = df_filtered.groupby('Sektor_Dominan').agg({
+        'Sentiment_Score': 'mean',
+        'Review_Count': 'mean'
+    }).reset_index().sort_values('Sentiment_Score', ascending=False)
     
     if not sec_stats.empty:
         top_sector = sec_stats.iloc[0]
@@ -221,56 +220,78 @@ with tab1:
             <div class="winner-box">
                 <h4>🏆 Top Sector Winner</h4>
                 <h2>{top_sector['Sektor_Dominan']}</h2>
-                <p>Rating: <b>{top_sector['Sentiment_Score']:.1f} / 5.0</b></p>
+                <p>Rating Rata-rata: <b>{top_sector['Sentiment_Score']:.1f} / 5.0</b></p>
+                <p><i>"Sektor paling direkomendasikan."</i></p>
             </div>
             """, unsafe_allow_html=True)
+            
         with sent_col2:
             chart_sent_bar = alt.Chart(sec_stats.head(5)).mark_bar().encode(
-                x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0])),
-                y=alt.Y('Sektor_Dominan', sort='-x'),
-                color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'))
-            ).properties(height=180)
+                x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0]), title='Rata-rata Rating'),
+                y=alt.Y('Sektor_Dominan', sort='-x', title='Sektor'),
+                color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'), legend=None),
+                tooltip=['Sektor_Dominan', 'Sentiment_Score']
+            ).properties(height=200)
             st.altair_chart(chart_sent_bar, use_container_width=True)
 
     st.markdown("---")
 
-    # --- STRATEGIC MATRIX & SATURATION MAP (FROM V3.0) ---
-    st.subheader("🎯 Matriks Strategi & Peta Saturasi")
+    # 3. MATRIKS STRATEGI & PETA (FITUR DARI V3.0)
+    st.subheader("🎯 Matriks Strategi & Peta Potensi")
     
-    col_strat1, col_strat2 = st.columns(2)
+    col_strat, col_map = st.columns(2)
     
-    with col_strat1:
-        st.markdown("**Matriks Posisi (Potensi vs Saturasi)**")
+    with col_strat:
+        st.markdown("**Matriks Posisi: Potensi vs Saturasi**")
+        st.caption("Lihat posisi setiap desa dalam kuadran strategi.")
         
-        # Quadrant Chart
-        base = alt.Chart(df_filtered).mark_circle(size=80).encode(
+        # Scatter Plot Strategy (v3.0 Style)
+        chart_quad = alt.Chart(df_filtered).mark_circle(size=100).encode(
             x=alt.X('Skor_Potensi', title='Potensi Ekonomi (Makin Kanan Bagus)'),
             y=alt.Y('Loan_per_HH', title='Saturasi (Pinjaman/KK)'),
-            color=alt.Color('Strategy_Quadrant', scale=alt.Scale(scheme='category10'), legend=alt.Legend(orient='bottom')),
+            color=alt.Color('Strategy_Quadrant', scale=alt.Scale(scheme='category10'), legend=alt.Legend(orient="bottom", title="Kuadran")),
             tooltip=['Desa', 'Kecamatan', 'Strategy_Quadrant', 'Loan_per_HH']
-        ).properties(height=400)
+        ).properties(height=400).interactive()
         
         # Garis Rata-rata
         rule_x = alt.Chart(df_filtered).mark_rule(color='gray', strokeDash=[3,3]).encode(x='mean(Skor_Potensi)')
         rule_y = alt.Chart(df_filtered).mark_rule(color='gray', strokeDash=[3,3]).encode(y='mean(Loan_per_HH)')
         
-        st.altair_chart(base + rule_x + rule_y, use_container_width=True)
+        st.altair_chart(chart_quad + rule_x + rule_y, use_container_width=True)
         
-    with col_strat2:
-        st.markdown("**Peta Panas Saturasi (Risk Map)**")
-        st.caption("Merah = Sangat Jenuh (> Rp 50jt/KK). Hijau = Masih Luas.")
-        
-        # Simple Map Saturasi
-        st.map(df_filtered, latitude='lat', longitude='lon', color='color_sat_hex', size=30, zoom=10)
-
-    # --- TABEL DATA LENGKAP PER DESA (FROM V3.0) ---
+    with col_map:
+        st.markdown("**Peta Sebaran Potensi Ekonomi**")
+        st.caption("Hijau = Potensi Tinggi. Biru = Menengah. Abu = Rendah.")
+        st.map(df_filtered, latitude='lat', longitude='lon', color='color_pot_hex', size=30, zoom=10)
+    
+    # 4. TABEL HIDDEN GEMS & DATA LENGKAP
     st.markdown("---")
-    with st.expander("📋 Lihat Data Lengkap Per Desa"):
+    col_gems, _ = st.columns([1, 0.01]) # Full width feel
+    
+    with col_gems:
+        st.subheader("💎 Top Hidden Gems (Unserved Market)")
+        top_n = st.slider("Jumlah Desa:", 3, 20, 5)
+        
+        gems = df_filtered[df_filtered['Strategy_Quadrant'] == 'Hidden Gem (Grow)']
+        if not gems.empty:
+            top_gems = gems.nlargest(top_n, 'Est_Unserved_KK')[['Desa', 'Kecamatan', 'Est_Unserved_KK', 'Skor_Potensi']]
+            st.dataframe(
+                top_gems, hide_index=True, use_container_width=True,
+                column_config={
+                    "Est_Unserved_KK": st.column_config.ProgressColumn("Potensi KK (Unserved)", format="%d KK", min_value=0, max_value=int(df_filtered['Jumlah_KK'].max())),
+                    "Skor_Potensi": st.column_config.NumberColumn("Eco Score")
+                }
+            )
+        else:
+            st.warning("Belum ada area Hidden Gems.")
+
+    # EXPANDER DATA LENGKAP (FITUR DARI V3.0)
+    with st.expander("📋 Lihat Data Lengkap Per Desa (Raw Data)"):
         st.dataframe(
             df_filtered[['Desa', 'Kecamatan', 'Skor_Potensi', 'Loan_per_HH', 'Total_Pinjaman', 'Strategy_Quadrant', 'Final_Risk_Score']],
             use_container_width=True,
             column_config={
-                "Skor_Potensi": st.column_config.ProgressColumn("Potensi", max_value=100, format="%.1f"),
+                "Skor_Potensi": st.column_config.NumberColumn("Potensi", format="%.1f"),
                 "Loan_per_HH": st.column_config.NumberColumn("Saturasi/KK", format="Rp %.1f Jt"),
                 "Total_Pinjaman": st.column_config.NumberColumn("Total Pinjaman", format="Rp %.0f")
             }
@@ -281,40 +302,63 @@ with tab2:
     st.markdown("### 🚀 Analisis Potensi Pertumbuhan")
     st.info("Visualisasi dan analisis detail area dengan potensi ekonomi tinggi.")
 
+    # 1. VISUALISASI PETA & HISTOGRAM
     c_g1, c_g2 = st.columns([2, 1])
     
     with c_g1:
         st.subheader("🗺️ Peta Sebaran Potensi")
+        st.caption("Hijau = Potensi Tinggi. Biru = Menengah. Abu = Rendah.")
+        # Peta Potensi
         st.map(df_filtered, latitude='lat', longitude='lon', color='color_pot_hex', size=30, zoom=10)
         
     with c_g2:
         st.subheader("📊 Kategori Potensi Desa")
+        
+        # Categorize Potential Logic
         def categorize_pot(x):
             if x > 70: return 'Tinggi (>70)'
             elif x > 40: return 'Sedang (40-70)'
             else: return 'Rendah (<40)'
+            
         df_filtered['Kategori_Potensi'] = df_filtered['Skor_Potensi'].apply(categorize_pot)
         
+        # Histogram Chart
         hist_pot = alt.Chart(df_filtered).mark_bar().encode(
-            x=alt.X('Kategori_Potensi', sort=['Tinggi (>70)', 'Sedang (40-70)', 'Rendah (<40)']),
-            y='count()',
-            color=alt.Color('Kategori_Potensi', scale=alt.Scale(range=['#00cc96', '#636efa', '#d3d3d3']))
+            x=alt.X('Kategori_Potensi', sort=['Tinggi (>70)', 'Sedang (40-70)', 'Rendah (<40)'], title='Kategori Potensi'),
+            y=alt.Y('count()', title='Jumlah Desa'),
+            color=alt.Color('Kategori_Potensi', scale=alt.Scale(domain=['Tinggi (>70)', 'Sedang (40-70)', 'Rendah (<40)'], range=['#00cc96', '#636efa', '#d3d3d3'])),
+            tooltip=['Kategori_Potensi', 'count()']
         ).properties(height=300)
         st.altair_chart(hist_pot, use_container_width=True)
 
     st.markdown("---")
+    
+    # 2. DETAIL TABLE (MODIFIED)
     st.subheader("📋 Detail Desa: Growth Opportunities")
     
-    with st.expander("ℹ️ Definisi & Metodologi Skor Ekonomi"):
-        st.markdown("**Skor Ekonomi** (0-100) mengukur daya tarik investasi berdasarkan aktivitas bisnis, infrastruktur, dan daya beli.")
+    # PENJELASAN DEFINISI SKOR EKONOMI
+    with st.expander("ℹ️ Definisi & Metodologi Skor Ekonomi (Skor Potensi)"):
+        st.markdown("""
+        **Skor Ekonomi (Skor Potensi)** adalah metrik komposit (skala 0-100) yang mengukur daya tarik investasi dan kesehatan ekonomi suatu desa.
+        
+        **Faktor Penyusun (Estimasi):**
+        1.  **Aktivitas Bisnis (40%):** Kepadatan UMKM, keberadaan pasar, dan sentra industri.
+        2.  **Infrastruktur Pendukung (30%):** Kualitas sinyal telekomunikasi, akses jalan, dan listrik.
+        3.  **Daya Beli (30%):** Tingkat pengeluaran per kapita dan kepadatan penduduk.
+        
+        *Rumus:* $$Score = (0.4 \times Biz) + (0.3 \times Infra) + (0.3 \times PurchasingPower)$$
+        """)
 
     growth_cols = ['Desa', 'Kecamatan', 'Skor_Potensi', 'Sektor_Dominan', 'Jumlah_KK', 'Est_Unserved_KK']
     growth_df = df_filtered.sort_values(by='Skor_Potensi', ascending=False)[growth_cols].copy()
     
     st.dataframe(
-        growth_df, hide_index=True, use_container_width=True,
+        growth_df,
+        hide_index=True,
+        use_container_width=True,
         column_config={
-            "Skor_Potensi": st.column_config.NumberColumn("Skor Ekonomi", format="%.1f"),
+            "Skor_Potensi": st.column_config.NumberColumn("Skor Ekonomi (0-100)", format="%.1f"),
+            "Jumlah_KK": st.column_config.NumberColumn("Total Keluarga"),
             "Est_Unserved_KK": st.column_config.NumberColumn("Est. KK Belum Pinjam")
         }
     )
@@ -328,9 +372,10 @@ with tab3:
         st.subheader("📊 Histogram Beban Utang")
         hist = alt.Chart(df_filtered).mark_bar().encode(
             x=alt.X('Loan_per_HH', bin=alt.Bin(maxbins=20), title='Pinjaman per KK (Juta Rp)'),
-            y='count()', color=alt.value('#ffa15a')
+            y='count()', color=alt.value('#ffa15a'), tooltip=['count()']
         ).properties(height=250)
         st.altair_chart(hist, use_container_width=True)
+        st.caption("Grafik yang condong ke kanan menandakan area yang mulai jenuh.")
 
     with col_sat2:
         st.subheader("⚔️ Komposisi Kuadran")
@@ -338,7 +383,8 @@ with tab3:
         quad_counts.columns = ['Kategori', 'Jumlah']
         pie = alt.Chart(quad_counts).mark_arc(outerRadius=100).encode(
             theta=alt.Theta("Jumlah", stack=True),
-            color=alt.Color("Kategori", scale=alt.Scale(scheme='tableau10'))
+            color=alt.Color("Kategori", scale=alt.Scale(scheme='tableau10')),
+            tooltip=["Kategori", "Jumlah"]
         )
         st.altair_chart(pie, use_container_width=True)
 
@@ -368,9 +414,11 @@ with tab4:
     st.markdown("### 🛡️ Profil Risiko Wilayah")
     
     col_r1, col_r2 = st.columns([2, 1])
+    
     with col_r1:
         st.subheader("🗺️ Peta Risiko (Heatmap)")
         st.caption("Merah = Risiko Tinggi. Hijau = Risiko Rendah.")
+        # SIMPLE MAP FOR RISK (Sama seperti Executive Summary Style)
         st.map(df_filtered, latitude='lat', longitude='lon', color='color_hex_risk', size=30, zoom=10)
 
     with col_r2:
@@ -392,8 +440,21 @@ with tab4:
     st.markdown("---")
     st.subheader("📋 Interpretasi Skor Risiko")
     
-    with st.expander("ℹ️ Definisi & Metodologi Skor Risiko"):
-        st.markdown("**Skor Risiko** (0-100) memprediksi probabilitas default berdasarkan Saturasi (30%), Ekonomi (30%), dan Faktor Lingkungan (40%).")
+    # PENJELASAN METODOLOGI SKOR RISIKO
+    with st.expander("ℹ️ Definisi & Metodologi Skor Risiko (Risk Score)"):
+        st.markdown("""
+        **Skor Risiko** adalah metrik (skala 0-100) yang memprediksi probabilitas gangguan pembayaran atau gagal bayar di suatu wilayah.
+        
+        **Komponen Perhitungan:**
+        1.  **Risiko Saturasi (30%):** Dihitung dari rasio total pinjaman terhadap jumlah keluarga. Semakin tinggi beban utang, semakin tinggi risiko.
+        2.  **Risiko Ekonomi (30%):** Kebalikan dari Skor Potensi. Ekonomi yang lemah meningkatkan risiko default.
+        3.  **Faktor Lingkungan & Sosial (40%):**
+            * *Konflik Sosial:* Penambahan poin risiko tertinggi (+50).
+            * *Kawasan Kumuh:* Risiko agunan (+30).
+            * *Rawan Bencana:* Risiko kontinuitas bisnis (+20).
+            
+        *Rumus:* $$Risk = (0.3 \times Saturation) + (0.3 \times (100 - Potensi)) + (0.4 \times EnvFactors)$$
+        """)
     
     def interpret_score(score):
         if score > 80: return "⛔ KRITIS: Stop Lending"
@@ -408,7 +469,10 @@ with tab4:
         risk_table.sort_values('Final_Risk_Score', ascending=False).head(100),
         hide_index=True, use_container_width=True,
         column_config={
-            "Final_Risk_Score": st.column_config.ProgressColumn("Risk Score", max_value=100, format="%.1f")
+            "Final_Risk_Score": st.column_config.ProgressColumn("Risk Score", max_value=100, format="%.1f"),
+            "Risk_Trigger_Count": st.column_config.NumberColumn("Jml Pemicu"),
+            "Flag_Konflik": st.column_config.CheckboxColumn("Konflik?"),
+            "Flag_Bencana": st.column_config.CheckboxColumn("Bencana?")
         }
     )
 
@@ -422,8 +486,10 @@ with tab5:
         
         with col_sim1:
             st.markdown("#### 1. Input Data Usaha")
+            
             avail_sectors = df_filtered['Sektor_Dominan'].unique()
             sim_sector = st.selectbox("Sektor Usaha Nasabah", avail_sectors)
+            
             sim_desa = st.selectbox("Lokasi Usaha (Desa)", df_filtered['Desa'].unique())
             sim_omzet = st.number_input("Omzet Usaha Bulanan (Juta Rp)", min_value=1.0, value=15.0, step=0.5)
             sim_lama = st.slider("Lama Usaha Berjalan (Tahun)", 0, 30, 3)
@@ -431,8 +497,13 @@ with tab5:
             
             sector_stats = df_filtered[df_filtered['Sektor_Dominan'] == sim_sector]
             avg_sec_risk = sector_stats['Final_Risk_Score'].mean()
+            avg_sec_pot = sector_stats['Skor_Potensi'].mean()
             
-            st.info(f"**Benchmark Sektor:** Rata-rata Risiko **{avg_sec_risk:.1f}/100**")
+            st.info(f"""
+            **Benchmark Sektor ({sim_sector}) di {selected_kab}:**
+            - Rata-rata Risiko: **{avg_sec_risk:.1f}/100**
+            - Rata-rata Potensi: **{avg_sec_pot:.1f}/100**
+            """)
 
         # Calculation Engine
         desa_data = df_filtered[df_filtered['Desa'] == sim_desa].iloc[0]
@@ -448,7 +519,11 @@ with tab5:
         
         final_score = (0.3 * loc_score) + (0.4 * cap_score) + (0.2 * coll_score) + (0.1 * (sentiment_loc/5)*100)
         
-        if avg_sec_risk > 60: final_score -= 10
+        note_sector = "✅ Sektor Aman"
+        if avg_sec_risk > 60:
+            final_score -= 10
+            note_sector = "⚠️ Sektor Berisiko Tinggi di Wilayah Ini"
+            
         if risk_loc > 60: final_score -= 15
         
         with col_sim2:
@@ -464,9 +539,11 @@ with tab5:
             else:
                 st.error("❌ **REJECTED**")
                 st.write("Risiko terlalu tinggi.")
+
+            st.caption(f"Catatan: {note_sector}")
             
         st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v11.5 | Final Integrated Release")
+st.caption("Geo-Credit Intelligence Framework v11.6 | Final Integrated Release")
