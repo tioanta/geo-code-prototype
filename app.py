@@ -50,7 +50,7 @@ st.markdown("""
         padding: 15px; 
         border-radius: 5px; 
         margin-bottom: 20px;
-        color: #000000 !important; /* Memaksa teks hitam */
+        color: #000000 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -154,21 +154,17 @@ st.sidebar.info(f"📍 **Coverage:** {len(df_filtered)} Desa")
 # 4. HELPER FUNCTION: PYDECK COLOR GENERATOR
 # -----------------------------------------------------------------------------
 def get_risk_color(score):
-    # Gradient Green to Red based on Risk Score
-    # Low Risk (0) -> Green [0, 255, 0]
-    # High Risk (100) -> Red [255, 0, 0]
-    if score < 20: return [0, 200, 83, 160] # Green
-    elif score < 40: return [255, 235, 59, 160] # Yellow
-    elif score < 60: return [255, 152, 0, 160] # Orange
-    else: return [213, 0, 0, 160] # Red
+    if score < 20: return [0, 200, 83, 200] # Green
+    elif score < 40: return [255, 235, 59, 200] # Yellow
+    elif score < 60: return [255, 152, 0, 200] # Orange
+    else: return [213, 0, 0, 200] # Red
 
 def get_potential_color(score):
-    # Gradient for Potential (Darker Green = Higher Potential)
-    # Norm 0-100
-    if score > 80: return [0, 100, 0, 180] # Dark Green
-    elif score > 60: return [50, 205, 50, 180] # Lime Green
-    elif score > 40: return [173, 216, 230, 180] # Light Blue
-    else: return [192, 192, 192, 180] # Grey
+    # Hijau Neon Terang untuk Potensi Tinggi agar kontras dengan Satellite
+    if score > 80: return [0, 255, 127, 200] # SpringGreen
+    elif score > 60: return [50, 205, 50, 200] # LimeGreen
+    elif score > 40: return [255, 215, 0, 180] # Gold (Medium)
+    else: return [169, 169, 169, 150] # Grey (Low)
 
 # Apply colors to dataframe for PyDeck
 df_filtered['color_risk'] = df_filtered['Final_Risk_Score'].apply(get_risk_color)
@@ -225,49 +221,49 @@ with tab1:
 
 # ================= TAB 2: GROWTH INTELLIGENCE =================
 with tab2:
-    st.markdown("### 🚀 Analisis Potensi Pertumbuhan")
+    st.markdown("### 🚀 Analisis Potensi Pertumbuhan (3D Satellite View)")
     
     c_g1, c_g2 = st.columns([2, 1])
     
     with c_g1:
-        st.subheader("🗺️ Peta Potensi (Satellite/Street View)")
-        st.caption("Peta Interaktif: Hijau Tua = Potensi Tertinggi. Bisa Zoom & Pan.")
+        st.subheader("🗺️ Peta Satelit 3D: Potensi Wilayah")
+        st.caption("Tinggi Batang = Skor Potensi. Warna = Tingkat Potensi.")
         
-        # PYDECK MAP FOR POTENTIAL
+        # --- PYDECK 3D COLUMN LAYER ---
         view_state = pdk.ViewState(
             latitude=df_filtered['lat'].mean(),
             longitude=df_filtered['lon'].mean(),
-            zoom=10,
-            pitch=0
+            zoom=11,
+            pitch=50, # Memberikan efek 3D miring
+            bearing=0
         )
         
-        layer = pdk.Layer(
-            "ScatterplotLayer",
+        layer_3d = pdk.Layer(
+            "ColumnLayer",
             data=df_filtered,
             get_position='[lon, lat]',
-            get_color='color_pot',
-            get_radius=200,
+            get_elevation='Skor_Potensi',
+            elevation_scale=30, # Skala tinggi batang
+            radius=150, # Jari-jari batang
+            get_fill_color='color_pot',
             pickable=True,
-            opacity=0.8,
-            stroked=True,
-            filled=True,
-            radius_min_pixels=5,
-            radius_max_pixels=20,
+            auto_highlight=True,
+            extruded=True,
         )
         
         st.pydeck_chart(pdk.Deck(
-            map_style='mapbox://styles/mapbox/light-v9',
+            map_style='mapbox://styles/mapbox/satellite-streets-v11', # STYLE SATELIT
             initial_view_state=view_state,
-            layers=[layer],
-            tooltip={"html": "<b>Desa:</b> {Desa}<br><b>Potensi:</b> {Skor_Potensi}<br><b>Sektor:</b> {Sektor_Dominan}"}
+            layers=[layer_3d],
+            tooltip={"html": "<b>Desa:</b> {Desa}<br><b>Potensi Score:</b> {Skor_Potensi}<br><b>Sektor:</b> {Sektor_Dominan}"}
         ))
+        # -------------------------------
         
     with c_g2:
         st.subheader("🏭 Matriks Kualitas Sektor")
-        st.caption("Analisis: Mencari Sektor 'Niche' (Kualitas Tinggi, Volume Rendah) vs 'Mass Market'.")
+        st.caption("Analisis: Mencari Sektor 'Niche' vs 'Mass Market'.")
         
         if 'Sektor_Dominan' in df_filtered.columns:
-            # Aggregation logic
             sec_agg = df_filtered.groupby('Sektor_Dominan').agg({
                 'Desa': 'count',
                 'Skor_Potensi': 'mean',
@@ -275,18 +271,17 @@ with tab2:
             }).reset_index()
             sec_agg.columns = ['Sektor', 'Jumlah_Desa', 'Avg_Potensi', 'Avg_Risiko']
             
-            # Bubble Chart Matrix
             chart_matrix = alt.Chart(sec_agg).mark_circle().encode(
                 x=alt.X('Jumlah_Desa', title='Market Size (Jml Desa)'),
                 y=alt.Y('Avg_Potensi', title='Market Quality (Avg Potensi)', scale=alt.Scale(domain=[0, 100])),
                 size=alt.Size('Jumlah_Desa', legend=None),
                 color=alt.Color('Avg_Risiko', scale=alt.Scale(scheme='redyellowgreen', reverse=True), title='Avg Risk'),
                 tooltip=['Sektor', 'Jumlah_Desa', 'Avg_Potensi', 'Avg_Risiko']
-            ).properties(height=350).interactive()
+            ).properties(height=400).interactive()
             
             st.altair_chart(chart_matrix, use_container_width=True)
 
-    st.info("💡 **Insight:** Sektor di pojok kiri atas adalah 'Hidden Gems' (Sedikit desa tapi potensi tinggi). Sektor di kanan atas adalah 'Core Business'.")
+    st.info("💡 **Insight:** Gunakan peta 3D untuk melihat densitas ekonomi secara visual. Batang yang tinggi dan hijau adalah 'Pusat Pertumbuhan' baru.")
 
 # ================= TAB 3: SATURATION DEEP-DIVE =================
 with tab3:
@@ -326,7 +321,7 @@ with tab4:
     r1, r2 = st.columns([2, 1])
     with r1:
         st.subheader("🗺️ Peta Zona Merah (Risk Heatmap)")
-        st.caption("Peta Interaktif: Merah Tua = Risiko Critical. Klik titik untuk detail.")
+        st.caption("Peta Risiko. Klik titik untuk detail parameter risiko.")
         
         # PYDECK MAP FOR RISK
         layer_risk = pdk.Layer(
@@ -334,16 +329,16 @@ with tab4:
             data=df_filtered,
             get_position='[lon, lat]',
             get_color='color_risk',
-            get_radius=200,
+            get_radius=250, # Radius lebih besar untuk risiko
             pickable=True,
             opacity=0.8,
             filled=True,
             radius_min_pixels=5,
-            radius_max_pixels=20,
+            radius_max_pixels=30,
         )
         
         st.pydeck_chart(pdk.Deck(
-            map_style='mapbox://styles/mapbox/light-v9',
+            map_style='mapbox://styles/mapbox/dark-v10', # DARK MODE Untuk Risk
             initial_view_state=view_state,
             layers=[layer_risk],
             tooltip={"html": "<b>Desa:</b> {Desa}<br><b>Risk Score:</b> {Final_Risk_Score}<br><b>Status:</b> {Risk_Category}"}
@@ -371,4 +366,4 @@ with tab4:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v7.1 | PyDeck Enabled | Matrix Analysis")
+st.caption("Geo-Credit Intelligence Framework v7.2 | 3D Satellite | Matrix Analysis")
