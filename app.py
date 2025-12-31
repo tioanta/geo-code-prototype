@@ -49,19 +49,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. DATA ENGINE (LOADER)
+# 2. DATA ENGINE (LOADER EXCEL & CSV)
 # -----------------------------------------------------------------------------
 @st.cache_data
 def load_data_engine():
     data = {}
     try:
-        # Load Main Data (Existing)
+        # 1. Load Main Data (Tetap CSV)
         data['main'] = pd.read_csv('Prototype Jawa Tengah.csv')
         
-        # Load Validation Data (New)
-        data['level1'] = pd.read_csv('Kewajaran_Omzet_All.xlsx - Level 1.csv')
-        data['level2'] = pd.read_csv('Kewajaran_Omzet_All.xlsx - Level 2.csv')
-        data['level3'] = pd.read_csv('Kewajaran_Omzet_All.xlsx - Level 3.csv')
+        # 2. Load Validation Data (Sekarang dari EXCEL Multiple Sheets)
+        excel_file = 'Kewajaran_Omzet_All.xlsx'
+        
+        # Membaca sheet spesifik
+        data['level1'] = pd.read_excel(excel_file, sheet_name='Level 1')
+        data['level2'] = pd.read_excel(excel_file, sheet_name='Level 2')
+        data['level3'] = pd.read_excel(excel_file, sheet_name='Level 3')
+        
+        # --- DATA PRE-PROCESSING ---
         
         # Clean Columns for Main Data
         data['main'].columns = [col.replace('potensi_wilayah_kel_podes_pdrb_sekda_current.', '') for col in data['main'].columns]
@@ -126,6 +131,7 @@ def load_data_engine():
         data['main']['Est_Unserved_KK'] = (data['main']['Jumlah_KK'] * (1 - saturation_ratio)).astype(int)
         
     except Exception as e:
+        st.error(f"Error loading data: {e}")
         return None
         
     return data
@@ -133,7 +139,7 @@ def load_data_engine():
 # LOAD DATA
 dataset = load_data_engine()
 if dataset is None:
-    st.error("❌ Data tidak ditemukan. Pastikan semua file CSV (Prototype & Kewajaran Omzet) ada.")
+    st.error("❌ Data tidak ditemukan. Pastikan file 'Prototype Jawa Tengah.csv' dan 'Kewajaran_Omzet_All.xlsx' ada di folder yang sama.")
     st.stop()
 
 df_filtered = dataset['main'] # Default for Tabs 1-4
@@ -323,10 +329,10 @@ with tab4:
     df_filtered['Interpretasi_Risiko'] = df_filtered['Final_Risk_Score'].apply(interpret_risk)
     st.dataframe(df_filtered[['Desa', 'Final_Risk_Score', 'Interpretasi_Risiko']].sort_values('Final_Risk_Score', ascending=False), hide_index=True, use_container_width=True)
 
-# ================= TAB 5: PENGECEKAN KEWAJARAN (NEW) =================
+# ================= TAB 5: PENGECEKAN KEWAJARAN (VALIDATION ENGINE) =================
 with tab5:
     st.markdown("### ✅ Pengecekan Tingkat Kewajaran (Validation Engine)")
-    st.info("Fitur untuk Mantri memvalidasi inputan pengajuan kredit berdasarkan benchmark data historis (Level 1-3).")
+    st.info("Fitur untuk Mantri memvalidasi inputan pengajuan kredit berdasarkan benchmark data historis (Level 1-3) dari file Excel.")
 
     # --- 1. SELECTION PANEL ---
     with st.container():
@@ -340,22 +346,21 @@ with tab5:
         
         c_sel1, c_sel2 = st.columns(2)
         with c_sel1:
-            # Cascading Selection Logic
-            # 1. Provinsi
-            prov_opts = sorted(ref_l3['Provinsi Usaha'].unique())
+            # 1. Provinsi (Cascading)
+            prov_opts = sorted(ref_l3['Provinsi Usaha'].astype(str).unique())
             sel_prov = st.selectbox("Provinsi Usaha", prov_opts)
             
-            # 2. Kota/Kab (Filtered by Prov)
-            kab_opts = sorted(ref_l3[ref_l3['Provinsi Usaha'] == sel_prov]['Kabupaten/kota'].unique())
+            # 2. Kota/Kab
+            kab_opts = sorted(ref_l3[ref_l3['Provinsi Usaha'] == sel_prov]['Kabupaten/kota'].astype(str).unique())
             sel_kab = st.selectbox("Kabupaten/Kota", kab_opts)
             
         with c_sel2:
-            # 3. Sektor (Filtered by Prov & Kab ideally, but using L3 unique for simplicity)
-            sec_opts = sorted(ref_l3['Sektor Ekonomi'].unique())
+            # 3. Sektor Ekonomi
+            sec_opts = sorted(ref_l3['Sektor Ekonomi'].astype(str).unique())
             sel_sec = st.selectbox("Sektor Ekonomi", sec_opts)
             
-            # 4. Sub Sektor (Filtered by Sector)
-            sub_opts = sorted(ref_l3[ref_l3['Sektor Ekonomi'] == sel_sec]['Sub Sektor Ekonomi'].unique())
+            # 4. Sub Sektor Ekonomi
+            sub_opts = sorted(ref_l3[ref_l3['Sektor Ekonomi'] == sel_sec]['Sub Sektor Ekonomi'].astype(str).unique())
             sel_sub = st.selectbox("Sub Sektor Ekonomi", sub_opts)
             
         st.markdown('</div>', unsafe_allow_html=True)
@@ -382,8 +387,9 @@ with tab5:
     if btn_check:
         st.markdown("### 📊 Hasil Validasi")
         
-        # --- LOOKUP LOGIC ---
-        # Level 3 Search (Most Specific)
+        # --- LOOKUP LOGIC (Multi-Level Fallback) ---
+        
+        # Level 3 Search (Specific City)
         match_l3 = ref_l3[
             (ref_l3['Provinsi Usaha'] == sel_prov) & 
             (ref_l3['Kabupaten/kota'] == sel_kab) & 
@@ -391,20 +397,20 @@ with tab5:
             (ref_l3['Sub Sektor Ekonomi'] == sel_sub)
         ]
         
-        # Level 2 Search (Fallback 1)
+        # Level 2 Search (Fallback - Province & Sub Sector)
         match_l2 = ref_l2[
             (ref_l2['Provinsi Usaha'] == sel_prov) & 
             (ref_l2['Sektor Ekonomi'] == sel_sec) & 
             (ref_l2['Sub Sektor Ekonomi'] == sel_sub)
         ]
         
-        # Level 1 Search (Fallback 2)
+        # Level 1 Search (Fallback - Province & Sector)
         match_l1 = ref_l1[
             (ref_l1['Provinsi Usaha'] == sel_prov) & 
             (ref_l1['Sektor Ekonomi'] == sel_sec)
         ]
         
-        # Determine Benchmark
+        # Logic Hierarchy
         if not match_l3.empty:
             benchmark = match_l3.iloc[0]
             source = f"Level 3 (Spesifik Kota {sel_kab})"
@@ -470,4 +476,4 @@ with tab5:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v12.0 | Validation Module Added")
+st.caption("Geo-Credit Intelligence Framework v12.1 | Validation Module with Excel Support")
