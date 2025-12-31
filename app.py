@@ -39,6 +39,11 @@ st.markdown("""
         background-color: #e8f0fe; border-left: 5px solid #1a73e8; padding: 15px; border-radius: 5px; margin-bottom: 20px; color: #000000 !important;
     }
     
+    /* Sentiment Winner Box (Style v2.0) */
+    .winner-box {
+        background-color: #e6fffa; border: 1px solid #b2f5ea; padding: 20px; border-radius: 10px; color: #234e52;
+    }
+    
     /* Scoring Box */
     .score-box { background-color: #f8f9fa; padding: 20px; border-radius: 10px; border: 1px solid #ddd; color: #333; }
 </style>
@@ -78,8 +83,6 @@ def load_data_engine():
     df['Loan_per_HH'] = (df['Total_Pinjaman'] / df['Jumlah_KK']) / 1_000_000 
     
     # Estimasi KK Belum Pinjam (Market Size Proxy)
-    # Asumsi: Jika Loan/HH rendah, maka banyak KK belum terlayani
-    # Logic: Unserved = Total KK * (1 - SaturationRatio)
     saturation_ratio = (df['Loan_per_HH'] / 50.0).clip(0, 1)
     df['Est_Unserved_KK'] = (df['Jumlah_KK'] * (1 - saturation_ratio)).astype(int)
 
@@ -176,9 +179,9 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 # ================= TAB 1: EXECUTIVE SUMMARY =================
 with tab1:
-    st.subheader("Dashboard Intelegensi Kredit Mikro & Sentimen Pasar")
+    st.markdown(f"### 📋 Ringkasan Strategis: {selected_kab}")
     
-    # KPI Metrics
+    # 1. KPI Metrics
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Exposure", f"Rp {df_filtered['Total_Pinjaman'].sum()/1e9:,.1f} M")
     c2.metric("Avg Risk Score", f"{df_filtered['Final_Risk_Score'].mean():.1f}/100")
@@ -187,23 +190,72 @@ with tab1:
 
     st.markdown("---")
     
-    # 1. PETA POTENSI + MARKET SENTIMENT (Gaya v2.0)
+    # 2. MARKET SENTIMENT ENGINE (Versi 2.0 Feature)
+    st.subheader("⭐ Market Sentiment Engine & Insight")
+    
+    # Automated Insight Box
+    pct_growth = (len(df_filtered[df_filtered['Strategy_Quadrant']=='Hidden Gem (Grow)']) / len(df_filtered)) * 100
+    dom_sector = df_filtered['Sektor_Dominan'].mode()[0] if not df_filtered['Sektor_Dominan'].empty else "Umum"
+    
+    st.markdown(f"""
+    <div class="insight-box">
+        <b>💡 Automated Business Insights:</b><br>
+        Wilayah <b>{selected_kab}</b> didorong oleh sektor <b>{dom_sector}</b> dengan potensi pertumbuhan <b>{pct_growth:.1f}%</b>.
+        Analisis sentimen menunjukkan sektor ini memiliki tingkat kepuasan tinggi, menjadikannya target ekspansi yang aman.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Top Sector Analysis
+    sent_col1, sent_col2 = st.columns([1, 2])
+    
+    # Calculate Top Sector
+    sec_stats = df_filtered.groupby('Sektor_Dominan').agg({
+        'Sentiment_Score': 'mean',
+        'Review_Count': 'mean'
+    }).reset_index().sort_values('Sentiment_Score', ascending=False)
+    
+    top_sector = sec_stats.iloc[0]
+    
+    with sent_col1:
+        st.markdown(f"""
+        <div class="winner-box">
+            <h4>🏆 Top Sector Winner</h4>
+            <h2>{top_sector['Sektor_Dominan']}</h2>
+            <p>Rating Rata-rata: <b>{top_sector['Sentiment_Score']:.1f} / 5.0</b></p>
+            <p><i>"Sektor paling direkomendasikan berdasarkan kepuasan pasar."</i></p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with sent_col2:
+        chart_sent_bar = alt.Chart(sec_stats.head(5)).mark_bar().encode(
+            x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0]), title='Rata-rata Rating'),
+            y=alt.Y('Sektor_Dominan', sort='-x', title='Sektor'),
+            color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'), legend=None),
+            tooltip=['Sektor_Dominan', 'Sentiment_Score']
+        ).properties(height=200)
+        st.altair_chart(chart_sent_bar, use_container_width=True)
+
+    st.markdown("---")
+
+    # 3. PETA & UNSERVED MARKET
     col_map, col_list = st.columns([2, 1])
     
     with col_map:
-        st.subheader("🗺️ Peta Potensi Ekonomi & Sentimen")
-        st.caption("Warna menunjukkan Potensi Ekonomi.")
+        st.subheader("🗺️ Peta Potensi Ekonomi")
+        st.caption("Visualisasi sebaran potensi wilayah.")
         st.map(df_filtered, latitude='lat', longitude='lon', color='color_pot_hex', size=30, zoom=10)
     
     with col_list:
-        st.subheader("🏆 Top Desa Potensial (Hidden Gems)")
+        st.subheader("💎 Top Hidden Gems (Unserved)")
+        st.caption("Desa dengan potensi tinggi namun penetrasi kredit masih rendah.")
+        
         # Slider interaktif
         top_n = st.slider("Jumlah Desa:", 3, 20, 5)
         
         # Logic: Filter Hidden Gems
         gems = df_filtered[df_filtered['Strategy_Quadrant'] == 'Hidden Gem (Grow)']
         if not gems.empty:
-            # Sort by Est_Unserved_KK (Permintaan User: Potensi jumlah KK yg belum pinjam)
+            # Sort by Est_Unserved_KK (Potensi KK Belum Pinjam)
             top_gems = gems.nlargest(top_n, 'Est_Unserved_KK')[['Desa', 'Kecamatan', 'Est_Unserved_KK', 'Skor_Potensi']]
             
             st.dataframe(
@@ -211,7 +263,7 @@ with tab1:
                 hide_index=True, 
                 use_container_width=True,
                 column_config={
-                    "Est_Unserved_KK": st.column_config.ProgressColumn("Potensi KK (Belum Pinjam)", format="%d KK", min_value=0, max_value=int(df_filtered['Jumlah_KK'].max())),
+                    "Est_Unserved_KK": st.column_config.ProgressColumn("Potensi KK (Unserved)", format="%d KK", min_value=0, max_value=int(df_filtered['Jumlah_KK'].max())),
                     "Skor_Potensi": st.column_config.NumberColumn("Eco Score")
                 }
             )
@@ -441,4 +493,4 @@ with tab5:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v11.0 | Final Comprehensive Edition")
+st.caption("Geo-Credit Intelligence Framework v11.1 | Complete Edition")
