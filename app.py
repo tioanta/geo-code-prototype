@@ -449,7 +449,7 @@ with tab5:
                     <div><strong>Omzet:</strong><br>{status_omzet}<br><span style="color:#666">Max: {max_omzet:,.0f}</span></div>
                     <div><strong>HPP:</strong><br>{status_hpp}<br><span style="color:#666">Max: {max_hpp:,.0f}</span></div>
                     <div><strong>Laba:</strong><br>{status_laba}<br><span style="color:#666">Max: {max_laba:,.0f}</span></div>
-                    <div style="background-color: #f5f5f5; padding: 5px; border-radius: 4px; border-left: 3px solid #000;">
+                    <div style="background-color: #f5f5f5; padding: 5px; border-radius: 4px; border-left: 3px solid #000000;">
                         <strong>Plafond yang Wajar:</strong><br>
                         <span style="color: #000000; font-size: 15px; font-weight: bold;">Rp {max_plafond:,.0f}</span>
                     </div>
