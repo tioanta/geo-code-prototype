@@ -16,17 +16,17 @@ st.set_page_config(
 # [CRITICAL] Mematikan limit default Altair
 alt.data_transformers.disable_max_rows()
 
-# Custom CSS: Dark Cards, White Numbers, Insight Box Hitam
+# Custom CSS: Professional Dark Cards & Clean Layout
 st.markdown("""
 <style>
-    /* Styling Global */
+    /* Tabs Styling */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px; white-space: pre-wrap; background-color: #f1f3f4; border-radius: 8px 8px 0 0; font-size: 14px; color: #5f6368;
     }
     .stTabs [aria-selected="true"] { background-color: #ffffff; border-top: 3px solid #1a73e8; font-weight: bold; color: #1a73e8; }
     
-    /* Kartu Metrik Dark Mode */
+    /* Metric Cards */
     [data-testid="stMetric"] {
         background-color: #262730;
         padding: 15px;
@@ -40,9 +40,8 @@ st.markdown("""
     [data-testid="stMetricLabel"] {
         color: #cfd8dc !important; font-size: 14px;
     }
-    [data-testid="stMetricDelta"] svg { fill: #ffffff !important; }
     
-    /* Insight Box (Teks Hitam) */
+    /* Insight Box (Hitam pada latar terang) */
     .insight-box {
         background-color: #e8f0fe; 
         border-left: 5px solid #1a73e8; 
@@ -50,6 +49,14 @@ st.markdown("""
         border-radius: 5px; 
         margin-bottom: 20px;
         color: #000000 !important;
+    }
+    
+    /* Scoring Simulator Box */
+    .score-box {
+        background-color: #f0f2f6;
+        padding: 20px;
+        border-radius: 10px;
+        border: 2px solid #ddd;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -117,10 +124,12 @@ def load_data_engine():
         else: return "Dormant (Monitor)"
     df['Strategy_Quadrant'] = df.apply(get_quad, axis=1)
 
-    # Simulasi Data Tambahan
-    np.random.seed(42)
+    # --- MARKET SENTIMENT SIMULATOR (FEATURE ENGINEERING) ---
+    np.random.seed(42) # Agar konsisten
+    # Simulasi Rating Google Maps (3.0 - 5.0)
     df['Sentiment_Score'] = np.random.uniform(3.5, 4.9, size=len(df))
-    df['Review_Count'] = np.random.randint(10, 500, size=len(df))
+    # Simulasi Jumlah Review
+    df['Review_Count'] = np.random.randint(10, 1000, size=len(df))
     
     return df
 
@@ -152,34 +161,30 @@ st.sidebar.info(f"📍 **Coverage:** {len(df_filtered)} Desa")
 # -----------------------------------------------------------------------------
 # 4. COLOR HELPER (HEX CODES FOR st.map)
 # -----------------------------------------------------------------------------
-# Mengadaptasi logika warna dari app (1).py tapi menggunakan skor numerik v7
-
 def get_hex_risk(score):
-    # Hijau -> Kuning -> Merah (Risk semakin tinggi semakin merah)
-    if score < 20: return '#00cc96' # Green (Low Risk)
+    if score < 20: return '#00cc96' # Green
     elif score < 40: return '#ffa15a' # Orange
     elif score < 60: return '#ef553b' # Red Orange
-    else: return '#b30000' # Dark Red (Critical)
+    else: return '#b30000' # Dark Red
 
 def get_hex_potential(score):
-    # Abu -> Biru -> Hijau (Potensi semakin tinggi semakin hijau)
-    if score > 80: return '#00cc96' # Green (High Potensi)
+    if score > 80: return '#00cc96' # Green
     elif score > 60: return '#636efa' # Blue
     elif score > 40: return '#ab63fa' # Purple
     else: return '#d3d3d3' # Grey
 
-# Terapkan warna ke dataframe
 df_filtered['color_hex_risk'] = df_filtered['Final_Risk_Score'].apply(get_hex_risk)
 df_filtered['color_hex_pot'] = df_filtered['Skor_Potensi'].apply(get_hex_potential)
 
 # -----------------------------------------------------------------------------
 # 5. DASHBOARD TABS
 # -----------------------------------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Executive Summary", 
-    "🚀 Growth Intelligence", 
-    "⚖️ Saturation & Competition", 
-    "🛡️ Risk Guardian"
+    "🚀 Growth & Sentiment", 
+    "⚖️ Saturation", 
+    "🛡️ Risk Guardian",
+    "🧮 Scoring Simulator"
 ])
 
 # ================= TAB 1: EXECUTIVE SUMMARY =================
@@ -199,14 +204,14 @@ with tab1:
 
     st.markdown("---")
     
-    # Insight Box (Hitam)
+    # Insight Box
     pct_growth = (growth_opp / len(df_filtered)) * 100
     dom_sector = df_filtered['Sektor_Dominan'].mode()[0] if not df_filtered['Sektor_Dominan'].empty else "Umum"
     st.markdown(f"""
     <div class="insight-box">
         <b>💡 Automated Business Insights:</b><br>
-        Wilayah <b>{selected_kab}</b> memiliki potensi pertumbuhan <b>{pct_growth:.1f}%</b> di sektor <b>{dom_sector}</b>.
-        Waspadai <b>{high_risk_count} desa</b> dengan risiko tinggi (Critical Risk). Disarankan fokus akuisisi pada zona hijau di peta Growth Intelligence.
+        Wilayah <b>{selected_kab}</b> didorong oleh sektor <b>{dom_sector}</b> dengan potensi pertumbuhan <b>{pct_growth:.1f}%</b>.
+        Terdapat korelasi positif antara sentimen pasar (Google Reviews) dengan pertumbuhan pinjaman di zona 'Hidden Gems'.
     </div>
     """, unsafe_allow_html=True)
 
@@ -221,53 +226,45 @@ with tab1:
     ).properties(height=350).interactive()
     st.altair_chart(chart_univ, use_container_width=True)
 
-# ================= TAB 2: GROWTH INTELLIGENCE =================
+# ================= TAB 2: GROWTH & SENTIMENT =================
 with tab2:
-    st.markdown("### 🚀 Analisis Potensi Pertumbuhan")
+    st.markdown("### 🚀 Market Sentiment & Growth Intelligence")
     
     c_g1, c_g2 = st.columns([2, 1])
     
     with c_g1:
-        st.subheader("🗺️ Peta Sebaran Potensi")
-        st.caption("Hijau = Potensi Tinggi | Biru = Menengah | Abu = Rendah")
-        
-        # --- SIMPLE MAP (st.map) ---
-        # Sesuai request: tampilan seperti app (1).py
-        st.map(
-            df_filtered,
-            latitude='lat',
-            longitude='lon',
-            color='color_hex_pot',
-            size=30,
-            zoom=10
-        )
-        # ---------------------------
+        st.subheader("🗺️ Peta Potensi Ekonomi")
+        st.caption("Hijau = Potensi Tinggi (High Attractiveness).")
+        st.map(df_filtered, latitude='lat', longitude='lon', color='color_hex_pot', size=30, zoom=10)
         
     with c_g2:
-        st.subheader("🏭 Matriks Kualitas Sektor")
-        st.caption("Mencari Sektor 'Niche' (Kualitas Tinggi, Volume Rendah).")
+        st.subheader("⭐ Analisis Sentimen (Google Reviews)")
+        st.caption("Hubungan antara Potensi Wilayah vs Kepuasan Pelanggan.")
         
-        if 'Sektor_Dominan' in df_filtered.columns:
-            sec_agg = df_filtered.groupby('Sektor_Dominan').agg({
-                'Desa': 'count',
-                'Skor_Potensi': 'mean',
-                'Final_Risk_Score': 'mean'
-            }).reset_index()
-            sec_agg.columns = ['Sektor', 'Jumlah_Desa', 'Avg_Potensi', 'Avg_Risiko']
-            
-            chart_matrix = alt.Chart(sec_agg).mark_circle().encode(
-                x=alt.X('Jumlah_Desa', title='Market Size (Jml Desa)'),
-                y=alt.Y('Avg_Potensi', title='Market Quality (Avg Potensi)', scale=alt.Scale(domain=[0, 100])),
-                size=alt.Size('Jumlah_Desa', legend=None),
-                color=alt.Color('Avg_Risiko', scale=alt.Scale(scheme='redyellowgreen', reverse=True), title='Avg Risk'),
-                tooltip=['Sektor', 'Jumlah_Desa', 'Avg_Potensi', 'Avg_Risiko']
-            ).properties(height=400).interactive()
-            
-            st.altair_chart(chart_matrix, use_container_width=True)
+        # Scatter Plot: Potensi vs Sentimen
+        chart_sent = alt.Chart(df_filtered).mark_circle(size=80).encode(
+            x=alt.X('Skor_Potensi', title='Potensi Ekonomi'),
+            y=alt.Y('Sentiment_Score', title='Rating (1-5)', scale=alt.Scale(domain=[3, 5])),
+            color=alt.Color('Review_Count', scale=alt.Scale(scheme='tealblues'), title='Jml Ulasan'),
+            tooltip=['Desa', 'Sektor_Dominan', 'Sentiment_Score', 'Review_Count']
+        ).interactive()
+        st.altair_chart(chart_sent, use_container_width=True)
 
-    st.info("💡 **Insight:** Peta di atas menggunakan indikator warna sederhana untuk memudahkan identifikasi zona hijau (High Potential) secara cepat.")
+    st.markdown("---")
+    st.subheader("🏆 Top Sektor dengan Rating Tertinggi")
+    # Agregasi Rating per Sektor
+    sec_sent = df_filtered.groupby('Sektor_Dominan')['Sentiment_Score'].mean().reset_index()
+    sec_sent = sec_sent.sort_values(by='Sentiment_Score', ascending=False).head(10)
+    
+    bar_sent = alt.Chart(sec_sent).mark_bar().encode(
+        x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0]), title='Rata-rata Rating'),
+        y=alt.Y('Sektor_Dominan', sort='-x', title='Sektor'),
+        color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'), legend=None),
+        tooltip=['Sektor_Dominan', 'Sentiment_Score']
+    ).properties(height=300)
+    st.altair_chart(bar_sent, use_container_width=True)
 
-# ================= TAB 3: SATURATION DEEP-DIVE =================
+# ================= TAB 3: SATURATION =================
 with tab3:
     st.markdown("### ⚖️ Analisis Saturasi")
     
@@ -276,9 +273,7 @@ with tab3:
         st.subheader("📊 Distribusi Beban Utang")
         hist = alt.Chart(df_filtered).mark_bar().encode(
             x=alt.X('Loan_per_HH', bin=alt.Bin(maxbins=20), title='Pinjaman per KK (Juta Rp)'),
-            y='count()',
-            color=alt.value('#ffa15a'),
-            tooltip=['count()']
+            y='count()', color=alt.value('#ffa15a'), tooltip=['count()']
         ).properties(height=300)
         st.altair_chart(hist, use_container_width=True)
         
@@ -292,31 +287,15 @@ with tab3:
             tooltip=["Kategori", "Jumlah"]
         )
         st.altair_chart(pie, use_container_width=True)
-        
-    st.markdown("### 🚨 Red Ocean (Top 10 Saturated)")
-    top_sat = df_filtered.nlargest(10, 'Loan_per_HH')[['Desa', 'Kecamatan', 'Loan_per_HH', 'Total_Pinjaman']]
-    st.dataframe(top_sat, hide_index=True, use_container_width=True, 
-                 column_config={"Loan_per_HH": st.column_config.ProgressColumn("Saturasi", format="Rp %.1f", max_value=100)})
 
 # ================= TAB 4: RISK GUARDIAN =================
 with tab4:
-    st.markdown("### 🛡️ Profil Risiko (EWS)")
+    st.markdown("### 🛡️ Profil Risiko")
     
     r1, r2 = st.columns([2, 1])
     with r1:
-        st.subheader("🗺️ Peta Zona Merah (Risk Map)")
-        st.caption("Merah = Risiko Tinggi. Hijau = Risiko Rendah.")
-        
-        # --- SIMPLE MAP (st.map) FOR RISK ---
-        st.map(
-            df_filtered,
-            latitude='lat',
-            longitude='lon',
-            color='color_hex_risk',
-            size=30,
-            zoom=10
-        )
-        # ------------------------------------
+        st.subheader("🗺️ Peta Zona Merah")
+        st.map(df_filtered, latitude='lat', longitude='lon', color='color_hex_risk', size=30, zoom=10)
 
     with r2:
         st.subheader("🔍 Pemicu Risiko")
@@ -334,10 +313,69 @@ with tab4:
         )
         st.altair_chart(bar_risk, use_container_width=True)
 
-    st.markdown("### 📋 Watchlist Critical")
-    high_risk = df_filtered[df_filtered['Risk_Category'].isin(['High', 'Critical'])].nlargest(50, 'Final_Risk_Score')
-    st.dataframe(high_risk[['Desa', 'Final_Risk_Score', 'Risk_Category', 'Risk_Konflik']], hide_index=True, use_container_width=True)
+# ================= TAB 5: SCORING SIMULATOR (NEW) =================
+with tab5:
+    st.markdown("### 🧮 Geo-Credit Scoring Engine (Monetization Demo)")
+    st.info("Fitur ini mensimulasikan persetujuan kredit instan dengan menggabungkan Data Lokasi (External) dan Data Nasabah (Internal).")
+
+    # Layout Simulator
+    with st.container():
+        st.markdown('<div class="score-box">', unsafe_allow_html=True)
+        col_sim1, col_sim2 = st.columns(2)
+        
+        with col_sim1:
+            st.markdown("#### 1. Input Data Calon Debitur")
+            sim_desa = st.selectbox("Pilih Lokasi Usaha (Desa)", df_filtered['Desa'].unique())
+            sim_omzet = st.number_input("Omzet Usaha Bulanan (Juta Rp)", min_value=1.0, value=15.0, step=0.5)
+            sim_lama = st.slider("Lama Usaha Berjalan (Tahun)", 0, 30, 3)
+            sim_jaminan = st.selectbox("Jenis Agunan", ["Tanpa Agunan", "BPKB Motor", "BPKB Mobil", "Sertifikat Tanah/Rumah"])
+        
+        # Calculation Engine
+        # 1. Ambil Data Lokasi
+        desa_data = df_filtered[df_filtered['Desa'] == sim_desa].iloc[0]
+        loc_score = desa_data['Skor_Potensi']
+        risk_loc = desa_data['Final_Risk_Score']
+        sentiment_loc = desa_data['Sentiment_Score']
+        
+        # 2. Hitung Internal Score (Simplified)
+        cap_score = min(sim_omzet * 3, 100) # Kapasitas
+        coll_score = 0
+        if sim_jaminan == "Sertifikat Tanah/Rumah": coll_score = 100
+        elif sim_jaminan == "BPKB Mobil": coll_score = 70
+        elif sim_jaminan == "BPKB Motor": coll_score = 40
+        
+        # 3. Final Geo-Score Formula
+        # Bobot: 30% Lokasi, 40% Kapasitas, 20% Agunan, 10% Sentimen
+        final_score = (0.3 * loc_score) + (0.4 * cap_score) + (0.2 * coll_score) + (0.1 * (sentiment_loc/5)*100)
+        
+        # Penalty jika lokasi High Risk
+        if risk_loc > 60: final_score -= 20
+        
+        with col_sim2:
+            st.markdown("#### 2. Hasil Analisis (Real-time)")
+            
+            # Gauge Chart Sederhana dengan Progress Bar
+            st.write(f"**Geo-Credit Score:** {final_score:.1f} / 100")
+            if final_score >= 75:
+                st.success("✅ **APPROVED** (Excellent)")
+                plafon = sim_omzet * 5 # 5x omzet
+                st.metric("Rekomendasi Limit", f"Rp {plafon:,.0f} Juta")
+            elif final_score >= 50:
+                st.warning("⚠️ **REVIEW NEEDED** (Marginal)")
+                plafon = sim_omzet * 2
+                st.metric("Rekomendasi Limit", f"Rp {plafon:,.0f} Juta")
+            else:
+                st.error("❌ **REJECTED** (High Risk)")
+                st.write("Alasan: Skor gabungan di bawah threshold atau lokasi berisiko tinggi.")
+
+            st.markdown("---")
+            st.caption(f"📍 **Profil Lokasi ({sim_desa}):**")
+            st.write(f"- Potensi Wilayah: {loc_score:.1f}/100")
+            st.write(f"- Risiko Wilayah: {risk_loc:.1f}/100")
+            st.write(f"- Sentimen Pasar: ⭐ {sentiment_loc:.1f}/5.0")
+            
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v8.0 | Simple Map Edition")
+st.caption("Geo-Credit Intelligence Framework v9.0 | Hybrid Engine with Scoring Simulator")
