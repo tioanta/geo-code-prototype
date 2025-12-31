@@ -43,9 +43,14 @@ st.markdown("""
     }
     [data-testid="stMetricDelta"] svg { fill: #ffffff !important; }
     
-    /* Insight Box */
+    /* Insight Box (Teks Hitam) */
     .insight-box {
-        background-color: #e8f0fe; border-left: 5px solid #1a73e8; padding: 15px; border-radius: 5px; margin-bottom: 20px;
+        background-color: #e8f0fe; 
+        border-left: 5px solid #1a73e8; 
+        padding: 15px; 
+        border-radius: 5px; 
+        margin-bottom: 20px;
+        color: #000000 !important; /* Memaksa teks hitam */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -366,4 +371,4 @@ with tab4:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v7.0 | PyDeck Enabled | Matrix Analysis")
+st.caption("Geo-Credit Intelligence Framework v7.1 | PyDeck Enabled | Matrix Analysis")
