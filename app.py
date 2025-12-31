@@ -274,7 +274,7 @@ with tab2:
     with c_g1:
         st.subheader("🗺️ Peta Sebaran Potensi")
         st.caption("Hijau = Potensi Tinggi. Biru = Menengah. Abu = Rendah.")
-        # Peta Potensi (Sama seperti Executive Summary)
+        # Peta Potensi
         st.map(df_filtered, latitude='lat', longitude='lon', color='color_pot_hex', size=30, zoom=10)
         
     with c_g2:
@@ -299,15 +299,24 @@ with tab2:
 
     st.markdown("---")
     
-    # 2. DETAIL TABLE
+    # 2. DETAIL TABLE (MODIFIED)
     st.subheader("📋 Detail Desa: Growth Opportunities")
+    
+    # PENJELASAN DEFINISI SKOR EKONOMI
+    with st.expander("ℹ️ Definisi & Metodologi Skor Ekonomi (Skor Potensi)"):
+        st.markdown("""
+        **Skor Ekonomi (Skor Potensi)** adalah metrik komposit (skala 0-100) yang mengukur daya tarik investasi dan kesehatan ekonomi suatu desa.
+        
+        **Faktor Penyusun (Estimasi):**
+        1.  **Aktivitas Bisnis (40%):** Kepadatan UMKM, keberadaan pasar, dan sentra industri.
+        2.  **Infrastruktur Pendukung (30%):** Kualitas sinyal telekomunikasi, akses jalan, dan listrik.
+        3.  **Daya Beli (30%):** Tingkat pengeluaran per kapita dan kepadatan penduduk.
+        
+        *Rumus:* $$Score = (0.4 \times Biz) + (0.3 \times Infra) + (0.3 \times PurchasingPower)$$
+        """)
+
     growth_cols = ['Desa', 'Kecamatan', 'Skor_Potensi', 'Sektor_Dominan', 'Jumlah_KK', 'Est_Unserved_KK']
     growth_df = df_filtered.sort_values(by='Skor_Potensi', ascending=False)[growth_cols].copy()
-    
-    def analyze_growth(row):
-        return f"Potensi tinggi di sektor {row['Sektor_Dominan']} dengan basis {row['Jumlah_KK']} KK."
-    
-    growth_df['Analisis Singkat'] = growth_df.apply(analyze_growth, axis=1)
     
     st.dataframe(
         growth_df,
@@ -316,8 +325,7 @@ with tab2:
         column_config={
             "Skor_Potensi": st.column_config.NumberColumn("Skor Ekonomi (0-100)", format="%.1f"),
             "Jumlah_KK": st.column_config.NumberColumn("Total Keluarga"),
-            "Est_Unserved_KK": st.column_config.NumberColumn("Est. KK Belum Pinjam"),
-            "Analisis Singkat": st.column_config.TextColumn("Highlight Analis", width="large")
+            "Est_Unserved_KK": st.column_config.NumberColumn("Est. KK Belum Pinjam")
         }
     )
 
@@ -510,4 +518,4 @@ with tab5:
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v11.2 | Enhanced Visualization")
+st.caption("Geo-Credit Intelligence Framework v11.3 | Enhanced Growth Visualization")
