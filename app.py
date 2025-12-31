@@ -4,212 +4,302 @@ import altair as alt
 import numpy as np
 
 # -----------------------------------------------------------------------------
-# 1. PAGE CONFIGURATION
+# 1. PAGE CONFIGURATION & STYLING
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Geo-Credit Risk Intelligence",
-    page_icon="📡",
+    page_title="Geo-Credit Strategic Dashboard",
+    page_icon="🏦",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Professional Styling
+# Professional Corporate Styling
 st.markdown("""
 <style>
-    .risk-badge-high { background-color: #ffcccc; color: #cc0000; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
-    .risk-badge-med { background-color: #fff4cc; color: #996600; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
-    .risk-badge-low { background-color: #ccffcc; color: #006600; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
-    div[data-testid="stMetricValue"] { font-size: 24px; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 5px 5px 0 0; gap: 1px; padding-top: 10px; padding-bottom: 10px;
+    }
+    .stTabs [aria-selected="true"] { background-color: #FFFFFF; border-top: 3px solid #2e7bcf; }
+    .metric-card { background-color: #ffffff; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    h3 { font-size: 20px !important; color: #333; }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. DATA LOADING & ENGINEERING
+# 2. DATA ENGINE (LOADING & PROCESSING)
 # -----------------------------------------------------------------------------
 @st.cache_data
-def load_and_process_data():
+def load_data_engine():
     try:
         df = pd.read_csv('Prototype Jawa Tengah.csv')
     except FileNotFoundError:
         return None
 
-    # Clean Column Names
+    # --- A. CLEANING ---
     df.columns = [col.replace('potensi_wilayah_kel_podes_pdrb_sekda_current.', '') for col in df.columns]
     
-    # Rename & Select Critical Columns
+    # Rename Critical Columns
     df.rename(columns={
-        'nama_kabupaten': 'Kabupaten',
-        'nama_kecamatan': 'Kecamatan',
-        'nama_desa': 'Desa',
-        'latitude_desa': 'lat',
-        'longitude_desa': 'lon',
-        'total_pinjaman_kel': 'Total_Pinjaman',
-        'total_simpanan_kel': 'Total_Simpanan',
+        'nama_kabupaten': 'Kabupaten', 'nama_kecamatan': 'Kecamatan', 'nama_desa': 'Desa',
+        'latitude_desa': 'lat', 'longitude_desa': 'lon',
+        'total_pinjaman_kel': 'Total_Pinjaman', 'total_simpanan_kel': 'Total_Simpanan',
         'jumlah_keluarga_pengguna_listrik': 'Jumlah_KK',
         'attractiveness_index': 'Skor_Potensi',
         'max_tipe_usaha': 'Sektor_Dominan',
-        # Risk Factors
         'jumlah_lokasi_permukiman_kumuh': 'Risk_Kumuh',
         'bencana_alam': 'Risk_Bencana',
         'jumlah_perkelahian_masyarakat': 'Risk_Konflik'
     }, inplace=True)
     
-    # Fill NaN
     num_cols = df.select_dtypes(include=[np.number]).columns
     df[num_cols] = df[num_cols].fillna(0)
     
-    # --- A. SATURATION METRIC ---
+    # --- B. METRIC CALCULATION ---
+    # 1. Saturation (Loan per HH)
     df['Jumlah_KK'] = df['Jumlah_KK'].replace(0, 1) 
-    df['Loan_per_HH'] = (df['Total_Pinjaman'] / df['Jumlah_KK']) / 1_000_000
+    df['Loan_per_HH'] = (df['Total_Pinjaman'] / df['Jumlah_KK']) / 1_000_000 # Juta Rp
     
-    # --- B. COMPOSITE RISK SCORING ALGORITHM ---
-    # 1. Saturation Risk (0-100) -> Higher loan/HH = Higher Risk
-    # Cap at 50 Juta/KK as max risk reference
-    df['Score_Saturation'] = (df['Loan_per_HH'] / 50.0).clip(0, 1) * 100 
+    # 2. Risk Scoring (Composite)
+    # Saturation Risk Contribution
+    sat_risk = (df['Loan_per_HH'] / 50.0).clip(0, 1) * 100 
+    # Economic Risk Contribution (Inverted Potential)
+    max_pot = df['Skor_Potensi'].max()
+    eco_risk = 100 - ((df['Skor_Potensi'] / max_pot) * 100)
+    # Env/Social Flags
+    env_risk = (df['Risk_Kumuh'] > 0).astype(int) * 30 + \
+               (df['Risk_Bencana'] > 0).astype(int) * 20 + \
+               (df['Risk_Konflik'] > 0).astype(int) * 50
+               
+    df['Final_Risk_Score'] = (0.3 * sat_risk) + (0.3 * eco_risk) + (0.4 * env_risk)
     
-    # 2. Economic Vulnerability Risk (0-100) -> Lower Potential = Higher Risk
-    # Invert Attractiveness Index (Assuming max score ~100)
-    max_potensi = df['Skor_Potensi'].max()
-    df['Score_Economic'] = 100 - ((df['Skor_Potensi'] / max_potensi) * 100)
-    
-    # 3. Environmental & Social Risk (Flags)
-    # Give penalty points
-    df['Score_Env_Social'] = 0
-    df.loc[df['Risk_Kumuh'] > 0, 'Score_Env_Social'] += 30 # High impact on collateral
-    df.loc[df['Risk_Bencana'] > 0, 'Score_Env_Social'] += 20 # Business continuity risk
-    df.loc[df['Risk_Konflik'] > 0, 'Score_Env_Social'] += 50 # Collection risk (Red Flag)
-    
-    # 4. FINAL DISBURSEMENT RISK SCORE (Weighted Average)
-    # Formula: 30% Saturation + 30% Economic + 40% Env/Social
-    df['Final_Risk_Score'] = (0.3 * df['Score_Saturation']) + \
-                             (0.3 * df['Score_Economic']) + \
-                             (0.4 * df['Score_Env_Social'])
-                             
-    # Classification
-    def get_risk_level(x):
-        if x >= 60: return '🔴 Critical Risk'
-        elif x >= 40: return '🟠 High Risk'
-        elif x >= 20: return '🟡 Medium Risk'
-        else: return '🟢 Low Risk'
-        
-    df['Risk_Level'] = df['Final_Risk_Score'].apply(get_risk_level)
-    
-    # Create "Risk Tags" for tooltip
-    def get_risk_tags(row):
-        tags = []
-        if row['Risk_Kumuh'] > 0: tags.append("Kumuh")
-        if row['Risk_Bencana'] > 0: tags.append("Rawan Bencana")
-        if row['Risk_Konflik'] > 0: tags.append("Konflik Sosial")
-        if row['Score_Saturation'] > 80: tags.append("Over-Indebted")
-        return ", ".join(tags) if tags else "Clean"
-        
-    df['Risk_Factors'] = df.apply(get_risk_tags, axis=1)
+    # 3. Categorization
+    def get_risk_cat(x):
+        if x >= 60: return 'Critical'
+        elif x >= 40: return 'High'
+        elif x >= 20: return 'Medium'
+        else: return 'Low'
+    df['Risk_Category'] = df['Final_Risk_Score'].apply(get_risk_cat)
 
+    # 4. Strategy Quadrant
+    avg_pot = df['Skor_Potensi'].mean()
+    avg_sat = df['Loan_per_HH'].mean()
+    def get_quad(row):
+        if row['Skor_Potensi'] >= avg_pot and row['Loan_per_HH'] < avg_sat: return "Hidden Gem (Grow)"
+        elif row['Skor_Potensi'] >= avg_pot and row['Loan_per_HH'] >= avg_sat: return "Red Ocean (Compete)"
+        elif row['Skor_Potensi'] < avg_pot and row['Loan_per_HH'] >= avg_sat: return "High Risk (Stop)"
+        else: return "Dormant (Monitor)"
+    df['Strategy_Quadrant'] = df.apply(get_quad, axis=1)
+
+    # 5. Market Sentiment Simulator (Fixed Seed for Stability)
+    np.random.seed(42)
+    df['Sentiment_Score'] = np.random.uniform(3.5, 4.9, size=len(df))
+    df['Review_Count'] = np.random.randint(10, 500, size=len(df))
+    
     return df
 
-df = load_and_process_data()
+df = load_data_engine()
 if df is None:
-    st.error("Data not found.")
+    st.error("Data tidak ditemukan.")
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR CONTROLS
+# 3. GLOBAL SIDEBAR
 # -----------------------------------------------------------------------------
-st.sidebar.title("🎛️ Risk Dashboard")
-selected_kab = st.sidebar.selectbox("Wilayah Operasional", df['Kabupaten'].unique())
+st.sidebar.title("🎛️ Geo-Control")
+selected_kab = st.sidebar.selectbox("Wilayah (Kabupaten)", df['Kabupaten'].unique())
 df_kab = df[df['Kabupaten'] == selected_kab]
 
 selected_kec = st.sidebar.multiselect("Filter Kecamatan", df_kab['Kecamatan'].unique(), default=df_kab['Kecamatan'].unique())
 df_filtered = df_kab[df_kab['Kecamatan'].isin(selected_kec)]
 
+st.sidebar.markdown("---")
+st.sidebar.caption(f"Total Desa Terpilih: {len(df_filtered)}")
+
 # -----------------------------------------------------------------------------
-# 4. MAIN DASHBOARD
+# 4. TAB ARCHITECTURE
 # -----------------------------------------------------------------------------
-st.title(f"Analisis Risiko Penyaluran: {selected_kab}")
-st.markdown("### Profil Risiko Kewilayahan (Disbursement Risk)")
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Executive Summary", 
+    "🚀 Growth Intelligence", 
+    "⚖️ Saturation Deep-Dive", 
+    "🛡️ Risk Guardian"
+])
 
-# --- KPI RISIKO ---
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    high_risk_count = len(df_filtered[df_filtered['Risk_Level'].isin(['🔴 Critical Risk', '🟠 High Risk'])])
-    st.metric("Desa Risiko Tinggi (Stop/Limit)", f"{high_risk_count}", delta="Mitigasi Segera", delta_color="inverse")
-with col2:
-    avg_risk = df_filtered['Final_Risk_Score'].mean()
-    st.metric("Rata-rata Skor Risiko Wilayah", f"{avg_risk:.1f}/100", help="0=Aman, 100=Sangat Bahaya")
-with col3:
-    conflict_area = len(df_filtered[df_filtered['Risk_Konflik'] > 0])
-    st.metric("Area Rawan Konflik (Blacklist)", f"{conflict_area} Desa")
-with col4:
-    disaster_area = len(df_filtered[df_filtered['Risk_Bencana'] > 0])
-    st.metric("Area Rawan Bencana", f"{disaster_area} Desa")
-
-# --- RISK MAP ---
-st.markdown("---")
-st.subheader("📍 Peta Zonasi Risiko Kredit")
-
-# Color Logic
-def risk_color(level):
-    if 'Critical' in level: return '#ff0000' # Red
-    if 'High' in level: return '#ff8c00' # Dark Orange
-    if 'Medium' in level: return '#ffd700' # Gold
-    return '#32cd32' # Lime Green
-
-df_filtered['color'] = df_filtered['Risk_Level'].apply(risk_color)
-
-col_map, col_details = st.columns([2, 1])
-
-with col_map:
-    st.map(df_filtered, latitude='lat', longitude='lon', color='color', size=30, zoom=10)
-    st.caption("🔴 Merah: Critical Risk (Ada Konflik/Saturasi Ekstrem) | 🟢 Hijau: Low Risk (Safe for Lending)")
-
-with col_details:
-    st.subheader("⚠️ Top 5 Desa Paling Berisiko")
-    risky_villages = df_filtered.sort_values(by='Final_Risk_Score', ascending=False).head(5)
+# =============================================================================
+# TAB 1: EXECUTIVE SUMMARY (High Level View)
+# =============================================================================
+with tab1:
+    st.markdown(f"### 📋 Ringkasan Eksekutif: {selected_kab}")
     
-    for _, row in risky_villages.iterrows():
-        st.markdown(f"""
-        <div style="background-color: #ffe6e6; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-            <strong>{row['Desa']}</strong> ({row['Kecamatan']})<br>
-            <span style="color: red; font-size: 12px;">Risk Score: {row['Final_Risk_Score']:.1f}</span><br>
-            <span style="font-size: 11px;">🚫 Faktor: {row['Risk_Factors']}</span>
-        </div>
-        """, unsafe_allow_html=True)
+    # Top Level metrics
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Total Exposure", f"Rp {df_filtered['Total_Pinjaman'].sum()/1e9:,.1f} M")
+    with c2:
+        st.metric("Rata-rata Risk Score", f"{df_filtered['Final_Risk_Score'].mean():.1f}/100")
+    with c3:
+        gem_count = len(df_filtered[df_filtered['Strategy_Quadrant']=='Hidden Gem (Grow)'])
+        st.metric("Potensi 'Hidden Gem'", f"{gem_count} Desa")
+    with c4:
+        risk_count = len(df_filtered[df_filtered['Risk_Category'].isin(['High', 'Critical'])])
+        st.metric("Area Waspada (High Risk)", f"{risk_count} Desa", delta_color="inverse")
 
-# --- DETAILED RISK TABLE ---
+    st.markdown("---")
+    
+    # The "Universe" Chart
+    st.subheader("🌌 Peta Strategi Makro (The Strategic Universe)")
+    st.caption("Sumbu X: Potensi Ekonomi | Sumbu Y: Saturasi Kredit | Warna: Tingkat Risiko | Ukuran: Total Exposure")
+    
+    chart_univ = alt.Chart(df_filtered).mark_circle().encode(
+        x=alt.X('Skor_Potensi', title='Potensi Ekonomi'),
+        y=alt.Y('Loan_per_HH', title='Saturasi (Pinjaman/KK)'),
+        color=alt.Color('Risk_Category', scale=alt.Scale(domain=['Low','Medium','High','Critical'], range=['green','gold','orange','red'])),
+        size=alt.Size('Total_Pinjaman', scale=alt.Scale(range=[50, 500]), legend=None),
+        tooltip=['Desa','Kecamatan','Risk_Category','Strategy_Quadrant']
+    ).properties(height=400).interactive()
+    
+    st.altair_chart(chart_univ, use_container_width=True)
+
+# =============================================================================
+# TAB 2: GROWTH INTELLIGENCE (Offensive Strategy)
+# =============================================================================
+with tab2:
+    st.markdown("### 🚀 Analisis Potensi Pertumbuhan")
+    st.info("Fokus: Menemukan area dengan ekonomi kuat dan sentimen pasar positif.")
+    
+    col_g1, col_g2 = st.columns([2, 1])
+    
+    with col_g1:
+        st.subheader("📍 Peta Potensi Ekonomi")
+        # Map focused on Attractiveness
+        chart_map_pot = alt.Chart(df_filtered).mark_circle(size=100).encode(
+            longitude='lon', latitude='lat',
+            color=alt.Color('Skor_Potensi', scale=alt.Scale(scheme='greens'), title='Skor Potensi'),
+            tooltip=['Desa', 'Skor_Potensi', 'Sektor_Dominan']
+        ).project('mercator').properties(height=400)
+        st.altair_chart(chart_map_pot, use_container_width=True)
+        
+    with col_g2:
+        st.subheader("🏭 Sektor Dominan")
+        sector_counts = df_filtered['Sektor_Dominan'].value_counts().reset_index()
+        sector_counts.columns = ['Sektor', 'Jumlah Desa']
+        
+        st.dataframe(sector_counts, hide_index=True, use_container_width=True)
+    
+    # Market Sentiment Analysis (Simulated)
+    st.markdown("---")
+    st.subheader("⭐ Market Sentiment (Simulasi Google Maps)")
+    
+    top_sentiment = df_filtered.sort_values(by='Sentiment_Score', ascending=False).head(10)
+    
+    st.altair_chart(
+        alt.Chart(top_sentiment).mark_bar().encode(
+            x=alt.X('Sentiment_Score', domain=[0, 5], title='Rating Rata-rata'),
+            y=alt.Y('Desa', sort='-x'),
+            color=alt.Color('Review_Count', title='Jml Ulasan'),
+            tooltip=['Desa','Sektor_Dominan','Sentiment_Score']
+        ).properties(title="Top 10 Desa dengan Rating Usaha Tertinggi"),
+        use_container_width=True
+    )
+
+# =============================================================================
+# TAB 3: SATURATION DEEP-DIVE (Market Share Strategy)
+# =============================================================================
+with tab3:
+    st.markdown("### ⚖️ Analisis Saturasi & Persaingan")
+    st.info("Fokus: Mengidentifikasi area jenuh (Red Ocean) vs area kosong (Blue Ocean).")
+    
+    # Metric Saturation
+    c_s1, c_s2 = st.columns(2)
+    with c_s1:
+        st.subheader("Matriks Persaingan")
+        quad_counts = df_filtered['Strategy_Quadrant'].value_counts().reset_index()
+        quad_counts.columns = ['Kategori', 'Jumlah Desa']
+        
+        base = alt.Chart(quad_counts).encode(theta=alt.Theta("Jumlah Desa", stack=True))
+        pie = base.mark_arc(outerRadius=120).encode(
+            color=alt.Color("Kategori"),
+            order=alt.Order("Jumlah Desa", sort="descending"),
+            tooltip=["Kategori", "Jumlah Desa"]
+        )
+        st.altair_chart(pie, use_container_width=True)
+        
+    with c_s2:
+        st.subheader("Top 10 Area 'Red Ocean' (Sangat Jenuh)")
+        red_ocean = df_filtered[df_filtered['Strategy_Quadrant'] == 'Red Ocean (Compete)']
+        red_ocean_sorted = red_ocean.sort_values(by='Loan_per_HH', ascending=False).head(10)
+        st.dataframe(
+            red_ocean_sorted[['Desa', 'Kecamatan', 'Loan_per_HH', 'Total_Pinjaman']],
+            hide_index=True,
+            column_config={"Loan_per_HH": st.column_config.NumberColumn("Pinjaman/KK (Juta)", format="Rp %.1f")}
+        )
+
+    st.markdown("#### 🗺️ Heatmap Saturasi")
+    st.map(df_filtered, latitude='lat', longitude='lon', size=20, color='#FFA500')
+    st.caption("Peta sebaran titik desa. Fokus pada densitas titik di area tertentu.")
+
+# =============================================================================
+# TAB 4: RISK GUARDIAN (Defensive Strategy)
+# =============================================================================
+with tab4:
+    st.markdown("### 🛡️ Profil Risiko & Mitigasi")
+    st.error("Fokus: Peringatan Dini (EWS) untuk area dengan risiko gagal bayar tinggi.")
+    
+    # Risk Factor Breakdown
+    col_r1, col_r2 = st.columns([2, 1])
+    
+    with col_r1:
+        st.subheader("📍 Zona Bahaya (Risk Heatmap)")
+        # Red map for high risk
+        risk_map = alt.Chart(df_filtered).mark_circle(size=80).encode(
+            longitude='lon', latitude='lat',
+            color=alt.Color('Final_Risk_Score', scale=alt.Scale(scheme='reds'), title='Score Risiko'),
+            tooltip=['Desa', 'Risk_Category', 'Final_Risk_Score']
+        ).project('mercator').properties(height=400)
+        st.altair_chart(risk_map, use_container_width=True)
+        
+    with col_r2:
+        st.subheader("🚨 Pemicu Risiko Utama")
+        risk_summary = pd.DataFrame({
+            'Faktor': ['Konflik Sosial', 'Bencana Alam', 'Kumuh', 'Over-Indebted'],
+            'Jml Desa': [
+                (df_filtered['Risk_Konflik']>0).sum(),
+                (df_filtered['Risk_Bencana']>0).sum(),
+                (df_filtered['Risk_Kumuh']>0).sum(),
+                (df_filtered['Loan_per_HH']>50).sum() # Asumsi >50jt/KK over
+            ]
+        })
+        st.bar_chart(risk_summary.set_index('Faktor'))
+
+    # Detailed Risk Table
+    st.markdown("### 📋 Daftar Hitam & Pengawasan Khusus (Watchlist)")
+    
+    high_risk_df = df_filtered[df_filtered['Risk_Category'].isin(['High', 'Critical'])].sort_values(by='Final_Risk_Score', ascending=False)
+    
+    def highlight_critical(val):
+        return 'background-color: #ffcccc' if val == 'Critical' else ''
+
+    st.dataframe(
+        high_risk_df[['Desa', 'Kecamatan', 'Risk_Category', 'Final_Risk_Score', 'Risk_Konflik', 'Risk_Bencana']],
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Final_Risk_Score": st.column_config.ProgressColumn("Skor Risiko", min_value=0, max_value=100, format="%.1f"),
+            "Risk_Konflik": st.column_config.CheckboxColumn("Konflik?"),
+            "Risk_Bencana": st.column_config.CheckboxColumn("Bencana?")
+        }
+    )
+    
+    # Automated Policy Logic
+    st.info("""
+    **Rekomendasi Kebijakan Kredit (Automated Policy):**
+    * 🔴 **Critical:** Stop Selling. Fokus Collection.
+    * 🟠 **High:** Batasi LTV max 50%. Wajib Agunan Tetap.
+    * 🟡 **Medium:** Verifikasi lapis dua (on-the-spot check).
+    * 🟢 **Low:** Pre-approved limit & Instant Approval.
+    """)
+
+# Footer
 st.markdown("---")
-st.subheader("📋 Detail Profil Risiko Per Desa")
-
-# Styling function for dataframe
-def highlight_risk(val):
-    color = 'red' if 'Critical' in val or 'High' in val else 'black'
-    return f'color: {color}; font-weight: bold'
-
-display_cols = ['Desa', 'Kecamatan', 'Risk_Level', 'Final_Risk_Score', 'Risk_Factors', 'Loan_per_HH', 'Risk_Bencana', 'Risk_Konflik']
-
-st.dataframe(
-    df_filtered[display_cols].style.applymap(highlight_risk, subset=['Risk_Level']),
-    use_container_width=True,
-    column_config={
-        "Final_Risk_Score": st.column_config.ProgressColumn("Risk Score", min_value=0, max_value=100, format="%.1f"),
-        "Loan_per_HH": st.column_config.NumberColumn("Pinjaman/KK (Juta)", format="Rp %.1f"),
-        "Risk_Bencana": st.column_config.NumberColumn("Idx Bencana"),
-        "Risk_Konflik": st.column_config.NumberColumn("Idx Konflik"),
-    }
-)
-
-# --- RECOMMENDATION ENGINE ---
-st.markdown("---")
-st.subheader("💡 Rekomendasi Kebijakan Penyaluran (Credit Policy)")
-
-risk_policy = {
-    "🔴 Critical Risk": "⛔ **STOP LENDING / BLACKLIST.** Risiko gagal bayar & sulit tagih sangat tinggi. Fokus pada penagihan berjalan saja.",
-    "🟠 High Risk": "⚠️ **RESTRICTED.** Maksimum Plafond Rp 10 Juta. Wajib agunan fisik 150%. Hindari pinjaman tanpa agunan.",
-    "🟡 Medium Risk": "✋ **CAUTION.** Lakukan survei lapis dua (Two-layer verification). Monitor ketat pembayaran 3 bulan pertama.",
-    "🟢 Low Risk": "✅ **AGGRESSIVE GROWTH.** Berikan pre-approved limit. Tawarkan promo bunga kompetitif."
-}
-
-for level, policy in risk_policy.items():
-    st.markdown(f"**{level}:** {policy}")
-
-st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v4.0 | Created by Tio Brain")
+st.caption("Developed by Tio | Enterprise Geo-kodes Framework v5.0")
