@@ -3,7 +3,7 @@ import pandas as pd
 import altair as alt
 import pydeck as pdk
 import numpy as np
-import difflib # Library built-in python untuk string matching
+import difflib # Library untuk string matching (Simulasi AI)
 
 # -----------------------------------------------------------------------------
 # 1. KONFIGURASI HALAMAN & UX
@@ -40,17 +40,12 @@ st.markdown("""
         background-color: #e8f0fe; border-left: 5px solid #1a73e8; padding: 15px; border-radius: 5px; margin-bottom: 20px; color: #000000 !important;
     }
     
-    /* Winner Box */
-    .winner-box {
-        background-color: #e6fffa; border: 1px solid #b2f5ea; padding: 20px; border-radius: 10px; color: #234e52;
-    }
-    
     /* Validation Cards */
     .validation-card {
         background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px;
     }
-    .ai-card {
-        background-color: #f3e5f5; padding: 15px; border-radius: 8px; border: 1px solid #ce93d8; margin-bottom: 15px;
+    .option-card {
+        background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6; margin-bottom: 15px;
     }
     .status-pass { color: #2e7d32; font-weight: bold; }
     .status-fail { color: #c62828; font-weight: bold; }
@@ -73,7 +68,7 @@ def load_data_engine():
         data['level2'] = pd.read_excel(excel_file, sheet_name='Level 2')
         data['level3'] = pd.read_excel(excel_file, sheet_name='Level 3')
         
-        # --- REPHRASING SECTOR & SUB-SECTOR NAMES (HUMAN READABLE) ---
+        # --- REPHRASING SECTOR & SUB-SECTOR NAMES ---
         sector_map = {
             "01-PERTANIAN, PERBURUAN DAN KEHUTANAN": "Pertanian, Kebun & Kehutanan",
             "03-PERTAMBANGAN DAN PENGGALIAN": "Tambang & Galian",
@@ -194,7 +189,6 @@ df_main = dataset['main']
 all_kab = sorted(df_main['Kabupaten'].unique())
 selected_kab = st.sidebar.selectbox("Pilih Wilayah (Kabupaten)", all_kab, index=0)
 
-# Filter Kecamatan berdasarkan Kabupaten terpilih
 df_kab = df_main[df_main['Kabupaten'] == selected_kab]
 all_kec = sorted(df_kab['Kecamatan'].unique())
 selected_kec = st.sidebar.multiselect("Filter Kecamatan", all_kec, default=all_kec)
@@ -395,170 +389,169 @@ with tab4:
     df_filtered['Interpretasi_Risiko'] = df_filtered['Final_Risk_Score'].apply(interpret_risk)
     st.dataframe(df_filtered[['Desa', 'Final_Risk_Score', 'Interpretasi_Risiko']].sort_values('Final_Risk_Score', ascending=False), hide_index=True, use_container_width=True)
 
-# ================= TAB 5: PENGECEKAN KEWAJARAN (VALIDATION ENGINE + AI MATCHING) =================
+# ================= TAB 5: PENGECEKAN KEWAJARAN (VALIDATION ENGINE) =================
 with tab5:
     st.markdown("### ✅ Pengecekan Tingkat Kewajaran (Validation Engine)")
-    st.info("Gunakan Free Text Input untuk mendapatkan rekomendasi sektor otomatis dari AI.")
+    st.info("Pilih metode input sektor: Manual (Dropdown) atau AI (Free Text).")
 
-    # Load Reference Data for Logic
+    # Load Reference Data
     ref_l3 = dataset['level3']
     ref_l2 = dataset['level2']
     ref_l1 = dataset['level1']
 
-    # --- 1. AI IDENTIFICATION PANEL ---
+    # --- 1. LOKASI SELECTION (COMMON FOR BOTH METHODS) ---
     with st.container():
-        st.markdown('<div class="ai-card">', unsafe_allow_html=True)
-        st.markdown("#### 🔍 Tahap 1: Identifikasi Jenis Usaha")
+        st.markdown('<div class="validation-card">', unsafe_allow_html=True)
+        st.markdown("#### 1. Lokasi Usaha")
         
-        col_ai1, col_ai2 = st.columns([1, 2])
-        
-        with col_ai1:
-            # 1. Pilih Lokasi (Filter Dasar)
+        c_loc1, c_loc2 = st.columns(2)
+        with c_loc1:
             prov_opts = sorted(ref_l3['Provinsi Usaha'].astype(str).unique())
             sel_prov = st.selectbox("Provinsi", prov_opts)
-            
+        
+        with c_loc2:
             kab_opts = sorted(ref_l3[ref_l3['Provinsi Usaha'] == sel_prov]['Kabupaten/kota'].astype(str).unique())
             sel_kab = st.selectbox("Kabupaten/Kota", kab_opts)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- 2. SECTOR INPUT METHOD SELECTION ---
+    st.markdown("#### 2. Identifikasi Jenis Usaha")
+    
+    # Init variables
+    selected_sector = None
+    selected_sub_sector = None
+    
+    # 2 OPSI INPUT (Horizontal Radio / Tabs look)
+    input_method = st.radio("Metode Input Sektor:", ["🗂️ Pilih dari List Eksisting", "🤖 Cari dengan AI (Free Text)"], horizontal=True)
+    
+    if input_method == "🗂️ Pilih dari List Eksisting":
+        with st.container():
+            st.markdown('<div class="option-card">', unsafe_allow_html=True)
+            sec_opts = sorted(ref_l3['Sektor Ekonomi'].astype(str).unique())
+            selected_sector = st.selectbox("Sektor Ekonomi", sec_opts)
             
-        with col_ai2:
-            # 2. Input Free Text
+            sub_opts = sorted(ref_l3[ref_l3['Sektor Ekonomi'] == selected_sector]['Sub Sektor Ekonomi'].astype(str).unique())
+            selected_sub_sector = st.selectbox("Sub Sektor Ekonomi", sub_opts)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    else: # AI Free Text
+        with st.container():
+            st.markdown('<div class="option-card">', unsafe_allow_html=True)
             user_query = st.text_input("Ketik Jenis Usaha (Contoh: Jualan Bakso, Ternak Lele, Toko Baju)", placeholder="Ketik disini...")
             
-            # --- AI MATCHING LOGIC (Using Difflib) ---
+            # AI MATCHING LOGIC
             suggested_options = []
             if user_query:
-                # Get unique sub-sectors available in the selected province/regency
-                # We prioritize Level 3 data
+                # Prioritize filtered location
                 relevant_data = ref_l3[ref_l3['Provinsi Usaha'] == sel_prov]
                 unique_subs = relevant_data['Sub Sektor Ekonomi'].dropna().unique().tolist()
                 
-                # Find closest matches
                 matches = difflib.get_close_matches(user_query, unique_subs, n=3, cutoff=0.3)
                 if matches:
                     suggested_options = matches
                 else:
-                    # Fallback to broader search if nothing found in specific filter
                     all_subs = ref_l3['Sub Sektor Ekonomi'].dropna().unique().tolist()
                     suggested_options = difflib.get_close_matches(user_query, all_subs, n=3, cutoff=0.3)
 
-            # Display Suggestions
-            selected_sub_sector = None
             if suggested_options:
-                st.success(f"🤖 **Rekomendasi AI:** Ditemukan {len(suggested_options)} sub-sektor terkait.")
-                selected_sub_sector = st.radio("Pilih Sektor yang Paling Sesuai:", suggested_options)
-            elif user_query and not suggested_options:
-                st.warning("⚠️ AI belum menemukan kecocokan pasti. Silakan pilih manual di bawah.")
+                st.success(f"🤖 **Rekomendasi AI:** Ditemukan {len(suggested_options)} sub-sektor.")
+                selected_sub_sector = st.radio("Pilih yang Sesuai:", suggested_options)
+                
+                # Auto-find Parent Sector
+                if selected_sub_sector:
+                    try:
+                        found_row = ref_l3[ref_l3['Sub Sektor Ekonomi'] == selected_sub_sector].iloc[0]
+                        selected_sector = found_row['Sektor Ekonomi']
+                        st.caption(f"ℹ️ Sektor Induk: **{selected_sector}**")
+                    except:
+                        selected_sector = ref_l3['Sektor Ekonomi'].iloc[0]
+            elif user_query:
+                st.warning("⚠️ AI tidak menemukan kecocokan. Coba kata kunci lain atau gunakan mode 'Pilih dari List'.")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 2. MANUAL SELECTION FALLBACK (If AI fails or Manual Override) ---
-    if not selected_sub_sector:
-        with st.expander("🔽 Pilih Manual Sektor/Sub-Sektor (Jika rekomendasi tidak sesuai)"):
-            sec_opts = sorted(ref_l3['Sektor Ekonomi'].astype(str).unique())
-            sel_sec_manual = st.selectbox("Sektor Ekonomi", sec_opts)
-            
-            sub_opts = sorted(ref_l3[ref_l3['Sektor Ekonomi'] == sel_sec_manual]['Sub Sektor Ekonomi'].astype(str).unique())
-            sel_sub_manual = st.selectbox("Sub Sektor Ekonomi", sub_opts)
-            selected_sub_sector = sel_sub_manual
-            selected_sector = sel_sec_manual
-    else:
-        # If AI selected, find the parent Sector automatically
-        # Look up the sector for the selected sub-sector
-        try:
-            found_row = ref_l3[ref_l3['Sub Sektor Ekonomi'] == selected_sub_sector].iloc[0]
-            selected_sector = found_row['Sektor Ekonomi']
-            st.caption(f"ℹ️ Otomatis dipetakan ke Sektor Induk: **{selected_sector}**")
-        except:
-            selected_sector = ref_l3['Sektor Ekonomi'].iloc[0] # Fallback safe
+    # --- 3. INPUT DATA KEUANGAN ---
+    if selected_sector and selected_sub_sector:
+        st.markdown("#### 3. Input Data Keuangan")
+        with st.container():
+            st.markdown('<div class="validation-card">', unsafe_allow_html=True)
+            c_in1, c_in2, c_in3 = st.columns(3)
+            with c_in1:
+                in_omzet = st.number_input("Omzet (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
+            with c_in2:
+                in_hpp = st.number_input("HPP (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
+            with c_in3:
+                in_laba = st.number_input("Laba (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
+                
+            btn_check = st.button("🚀 Cek Validasi", type="primary")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        # --- 4. EXECUTION ---
+        if btn_check:
+            st.markdown("### 📊 Hasil Analisa Multi-Level")
+            
+            # Helper to render card
+            def render_level_check(level_name, dataset, query_mask, inputs):
+                match = dataset[query_mask]
+                if match.empty: return None
+                
+                row = match.iloc[0]
+                max_omzet = row['OMZET_MAX_WAJAR']
+                max_hpp = row['HPP_MAX_WAJAR']
+                max_laba = row['LABA_MAX_WAJAR']
+                max_plafond = row['PLAFOND_MAX_WAJAR']
+                
+                # Logic Status
+                status_omzet = "✅ WAJAR" if inputs['omzet'] <= max_omzet else "❌ TIDAK WAJAR"
+                status_hpp = "✅ WAJAR" if inputs['hpp'] <= max_hpp else "❌ TIDAK WAJAR"
+                status_laba = "✅ WAJAR" if inputs['laba'] <= max_laba else "❌ TIDAK WAJAR"
+                
+                is_all_valid = (inputs['omzet'] <= max_omzet) and (inputs['hpp'] <= max_hpp) and (inputs['laba'] <= max_laba)
+                
+                badge_color = "#e8f5e9" if is_all_valid else "#ffebee"
+                badge_text_color = "#2e7d32" if is_all_valid else "#c62828"
+                badge_label = "WAJAR" if is_all_valid else "TIDAK WAJAR"
+                border_color = "#4caf50" if is_all_valid else "#e57373"
 
-    # --- 3. FINANCIAL INPUT PANEL ---
-    with st.container():
-        st.markdown('<div class="validation-card">', unsafe_allow_html=True)
-        st.markdown("#### 📝 Tahap 2: Input Data Keuangan")
-        
-        c_in1, c_in2, c_in3 = st.columns(3)
-        with c_in1:
-            in_omzet = st.number_input("Omzet (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
-        with c_in2:
-            in_hpp = st.number_input("HPP (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
-        with c_in3:
-            in_laba = st.number_input("Laba (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
-            
-        btn_check = st.button("🚀 Cek Validasi & Plafond", type="primary")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # --- 4. VALIDATION ENGINE EXECUTION ---
-    if btn_check:
-        st.markdown("### 📊 Hasil Analisa Multi-Level")
-        
-        # Function to Render Level Card
-        def render_level_check(level_name, dataset, query_mask, inputs):
-            match = dataset[query_mask]
-            if match.empty:
-                return None
-            
-            row = match.iloc[0]
-            max_omzet = row['OMZET_MAX_WAJAR']
-            max_hpp = row['HPP_MAX_WAJAR']
-            max_laba = row['LABA_MAX_WAJAR']
-            max_plafond = row['PLAFOND_MAX_WAJAR']
-            
-            # Check Status
-            status_omzet = "✅ WAJAR" if inputs['omzet'] <= max_omzet else "❌ TIDAK WAJAR"
-            status_hpp = "✅ WAJAR" if inputs['hpp'] <= max_hpp else "❌ TIDAK WAJAR"
-            status_laba = "✅ WAJAR" if inputs['laba'] <= max_laba else "❌ TIDAK WAJAR"
-            
-            # Overall Status
-            is_all_valid = (inputs['omzet'] <= max_omzet) and (inputs['hpp'] <= max_hpp) and (inputs['laba'] <= max_laba)
-            
-            if is_all_valid:
-                level_badge = '<span style="background-color:#e8f5e9; color:#2e7d32; padding:3px 8px; border-radius:4px; font-weight:bold;">WAJAR</span>'
-                border_color = "#4caf50"
-            else:
-                level_badge = '<span style="background-color:#ffebee; color:#c62828; padding:3px 8px; border-radius:4px; font-weight:bold;">TIDAK WAJAR</span>'
-                border_color = "#e57373"
-
-            # [CRITICAL] Text color forced to #000000 (Black)
-            html = f"""
-            <div style="border: 2px solid {border_color}; padding: 15px; border-radius: 8px; margin-bottom: 15px; background-color: #fafafa;">
-                <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px; display: flex; justify-content: space-between; color: #000000;">
-                    <span>{level_name}</span>
-                    {level_badge}
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; font-size: 13px; color: #000000;">
-                    <div><strong>Omzet:</strong><br>{status_omzet}<br><span style="color:#000000">Max: {max_omzet:,.0f}</span></div>
-                    <div><strong>HPP:</strong><br>{status_hpp}<br><span style="color:#000000">Max: {max_hpp:,.0f}</span></div>
-                    <div><strong>Laba:</strong><br>{status_laba}<br><span style="color:#000000">Max: {max_laba:,.0f}</span></div>
-                    <div style="background-color: #f5f5f5; padding: 5px; border-radius: 4px; border-left: 3px solid #000;">
-                        <strong>Plafond yang Wajar:</strong><br>
-                        <span style="color: #000000; font-size: 15px; font-weight: bold;">Rp {max_plafond:,.0f}</span>
+                html = f"""
+                <div style="border: 2px solid {border_color}; padding: 15px; border-radius: 8px; margin-bottom: 15px; background-color: #fafafa;">
+                    <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px; display: flex; justify-content: space-between; color: #000000;">
+                        <span>{level_name}</span>
+                        <span style="background-color:{badge_color}; color:{badge_text_color}; padding:3px 8px; border-radius:4px;">{badge_label}</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; font-size: 13px; color: #000000;">
+                        <div><strong>Omzet:</strong><br>{status_omzet}<br><span style="color:#000000">Max: {max_omzet:,.0f}</span></div>
+                        <div><strong>HPP:</strong><br>{status_hpp}<br><span style="color:#000000">Max: {max_hpp:,.0f}</span></div>
+                        <div><strong>Laba:</strong><br>{status_laba}<br><span style="color:#000000">Max: {max_laba:,.0f}</span></div>
+                        <div style="background-color: #f5f5f5; padding: 5px; border-radius: 4px; border-left: 3px solid #000;">
+                            <strong>Plafond yang Wajar:</strong><br>
+                            <span style="color: #000000; font-size: 15px; font-weight: bold;">Rp {max_plafond:,.0f}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-            """
-            return html
+                """
+                return html
 
-        user_inputs = {'omzet': in_omzet, 'hpp': in_hpp, 'laba': in_laba}
-        
-        # 1. Check Level 1 (Provinsi + Sektor)
-        mask_l1 = (ref_l1['Provinsi Usaha'] == sel_prov) & (ref_l1['Sektor Ekonomi'] == selected_sector)
-        res_l1 = render_level_check("Level 1: Provinsi & Sektor", ref_l1, mask_l1, user_inputs)
-        
-        # 2. Check Level 2 (Provinsi + Sub Sektor)
-        mask_l2 = (ref_l2['Provinsi Usaha'] == sel_prov) & (ref_l2['Sektor Ekonomi'] == selected_sector) & (ref_l2['Sub Sektor Ekonomi'] == selected_sub_sector)
-        res_l2 = render_level_check("Level 2: Provinsi & Sub Sektor", ref_l2, mask_l2, user_inputs)
-        
-        # 3. Check Level 3 (Kabupaten + Sub Sektor)
-        mask_l3 = (ref_l3['Provinsi Usaha'] == sel_prov) & (ref_l3['Kabupaten/kota'] == sel_kab) & (ref_l3['Sektor Ekonomi'] == selected_sector) & (ref_l3['Sub Sektor Ekonomi'] == selected_sub_sector)
-        res_l3 = render_level_check(f"Level 3: {sel_kab} & Sub Sektor", ref_l3, mask_l3, user_inputs)
-        
-        # Render Results
-        if res_l1: st.markdown(res_l1, unsafe_allow_html=True)
-        if res_l2: st.markdown(res_l2, unsafe_allow_html=True)
-        if res_l3: st.markdown(res_l3, unsafe_allow_html=True)
-        
-        if not (res_l1 or res_l2 or res_l3):
-            st.warning("⚠️ Data benchmark tidak ditemukan. Mohon cek kembali input lokasi/sektor.")
+            inputs = {'omzet': in_omzet, 'hpp': in_hpp, 'laba': in_laba}
+            
+            # Logic Checking (Cascading)
+            # Level 1
+            mask1 = (ref_l1['Provinsi Usaha'] == sel_prov) & (ref_l1['Sektor Ekonomi'] == selected_sector)
+            res1 = render_level_check("Level 1: Provinsi & Sektor", ref_l1, mask1, inputs)
+            
+            # Level 2
+            mask2 = (ref_l2['Provinsi Usaha'] == sel_prov) & (ref_l2['Sektor Ekonomi'] == selected_sector) & (ref_l2['Sub Sektor Ekonomi'] == selected_sub_sector)
+            res2 = render_level_check("Level 2: Provinsi & Sub Sektor", ref_l2, mask2, inputs)
+            
+            # Level 3
+            mask3 = (ref_l3['Provinsi Usaha'] == sel_prov) & (ref_l3['Kabupaten/kota'] == sel_kab) & (ref_l3['Sektor Ekonomi'] == selected_sector) & (ref_l3['Sub Sektor Ekonomi'] == selected_sub_sector)
+            res3 = render_level_check(f"Level 3: {sel_kab} & Sub Sektor", ref_l3, mask3, inputs)
+            
+            if res1: st.markdown(res1, unsafe_allow_html=True)
+            if res2: st.markdown(res2, unsafe_allow_html=True)
+            if res3: st.markdown(res3, unsafe_allow_html=True)
+            
+            if not (res1 or res2 or res3):
+                st.warning("⚠️ Data benchmark tidak ditemukan untuk kombinasi ini.")
 
 # Footer
 st.markdown("---")
