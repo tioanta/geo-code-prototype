@@ -68,22 +68,29 @@ def load_data_engine():
         data['level2'] = pd.read_excel(excel_file, sheet_name='Level 2')
         data['level3'] = pd.read_excel(excel_file, sheet_name='Level 3')
         
-        # --- REPHRASING SECTOR & SUB-SECTOR NAMES ---
+        # --- [UPDATED] COMPREHENSIVE SECTOR MAPPING ---
+        # Menambahkan kode 02, 05, 12, 16, 17, 99 yang mungkin muncul
         sector_map = {
             "01-PERTANIAN, PERBURUAN DAN KEHUTANAN": "Pertanian, Kebun & Kehutanan",
+            "02-PERIKANAN": "Perikanan & Kelautan",
             "03-PERTAMBANGAN DAN PENGGALIAN": "Tambang & Galian",
             "04-INDUSTRI PENGOLAHAN": "Industri & Produksi Barang",
+            "05-LISTRIK, GAS DAN AIR": "Listrik, Gas & Air Bersih",
             "06-KONSTRUKSI": "Konstruksi & Bangunan",
             "07-PERDAGANGAN BESAR DAN ECERAN": "Perdagangan (Toko/Grosir)",
             "08-PENYEDIAAN AKOMODASI DAN PENYEDIAAN MAKAN MINUM": "Hotel, Restoran & Katering",
             "09-TRANSPORTASI, PERGUDANGAN DAN KOMUNIKASI": "Transportasi, Gudang & Logistik",
-            "10-PERANTARA KEUANGAN": "Jasa Keuangan",
+            "10-PERANTARA KEUANGAN": "Jasa Keuangan & Bank",
             "11-REAL ESTATE, USAHA PERSEWAAN, DAN JASA PERUSAHAAN": "Properti, Sewa & Jasa Bisnis",
+            "12-ADMINISTRASI PEMERINTAHAN, PERTAHANAN DAN JAMINAN SOSIAL WAJIB": "Pemerintahan & PNS",
             "13-JASA PENDIDIKAN": "Pendidikan & Kursus",
             "14-JASA KESEHATAN DAN KEGIATAN SOSIAL": "Kesehatan & Klinik",
             "15-JASA KEMASYARAKATAN, SOSIAL BUDAYA, HIBURAN DAN PERORANGAN LAINNYA": "Jasa Sosial, Hiburan & Loundry",
+            "16-JASA PERORANGAN YANG MELAYANI RUMAH TANGGA": "Jasa Rumah Tangga (ART)",
+            "17-BADAN INTERNASIONAL DAN BADAN EKSTRA INTERNASIONAL LAINNYA": "Badan Internasional",
+            "18-KEGIATAN YANG BELUM JELAS BATASANNYA": "Kegiatan Lainnya",
             "19-PENERIMA KREDIT BUKAN LAPANGAN USAHA": "Keperluan Konsumtif / Rumah Tangga",
-            "18-KEGIATAN YANG BELUM JELAS BATASANNYA": "Kegiatan Lainnya"
+            "99-KEGIATAN LAINNYA": "Sektor Lainnya"
         }
         
         sub_sector_map = {
@@ -124,6 +131,7 @@ def load_data_engine():
         }
         data['main'].rename(columns={k: v for k, v in rename_map.items() if k in data['main'].columns}, inplace=True)
         
+        # Apply sector map to main data as well
         if 'Sektor_Dominan' in data['main'].columns:
              data['main']['Sektor_Dominan'] = data['main']['Sektor_Dominan'].replace(sector_map)
 
@@ -183,9 +191,7 @@ if dataset is None:
 # -----------------------------------------------------------------------------
 st.sidebar.title("🎛️ Geo-Control Panel")
 
-# Gunakan dataset['main'] sebagai basis data spasial
 df_main = dataset['main']
-
 all_kab = sorted(df_main['Kabupaten'].unique())
 selected_kab = st.sidebar.selectbox("Pilih Wilayah (Kabupaten)", all_kab, index=0)
 
@@ -242,7 +248,7 @@ with tab1:
 
     st.markdown("---")
     
-    # Market Sentiment Engine
+    # Market Sentiment
     st.subheader("⭐ Market Sentiment Engine & Insight")
     
     pct_growth = (len(df_filtered[df_filtered['Strategy_Quadrant']=='Hidden Gem (Grow)']) / len(df_filtered)) * 100
@@ -256,7 +262,7 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
     
-    # Top Sector Analysis
+    # Sector Chart
     sent_col1, sent_col2 = st.columns([1, 2])
     sec_stats = df_filtered.groupby('Sektor_Dominan').agg({'Sentiment_Score': 'mean', 'Review_Count': 'mean'}).reset_index().sort_values('Sentiment_Score', ascending=False)
     
@@ -268,25 +274,21 @@ with tab1:
                 <h4>🏆 Top Sector Winner</h4>
                 <h2>{top_sector['Sektor_Dominan']}</h2>
                 <p>Rating Rata-rata: <b>{top_sector['Sentiment_Score']:.1f} / 5.0</b></p>
-                <p><i>"Sektor paling direkomendasikan."</i></p>
             </div>
             """, unsafe_allow_html=True)
         with sent_col2:
             chart_sent_bar = alt.Chart(sec_stats.head(5)).mark_bar().encode(
-                x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0]), title='Rata-rata Rating'),
-                y=alt.Y('Sektor_Dominan', sort='-x', title='Sektor'),
-                color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'), legend=None),
-                tooltip=['Sektor_Dominan', 'Sentiment_Score']
+                x=alt.X('Sentiment_Score', scale=alt.Scale(domain=[3.5, 5.0])),
+                y=alt.Y('Sektor_Dominan', sort='-x'),
+                color=alt.Color('Sentiment_Score', scale=alt.Scale(scheme='greens'))
             ).properties(height=200)
             st.altair_chart(chart_sent_bar, use_container_width=True)
 
     st.markdown("---")
 
-    # Eco Score Definition
     with st.expander("ℹ️ Definisi & Metodologi Skor Ekonomi (Eco Score)"):
         st.markdown("**Skor Ekonomi** (0-100) mengukur daya tarik investasi berdasarkan aktivitas bisnis (40%), infrastruktur (30%), dan daya beli (30%).")
 
-    # Strategic Matrix
     st.subheader("🎯 Matriks Strategi & Peta Potensi")
     col_strat, col_map = st.columns(2)
     
@@ -331,8 +333,6 @@ with tab2:
         st.altair_chart(hist_pot, use_container_width=True)
 
     st.subheader("📋 Detail Desa: Growth Opportunities")
-    with st.expander("ℹ️ Definisi Skor Ekonomi"):
-        st.write("Skor komposit dari aktivitas bisnis dan infrastruktur.")
     st.dataframe(df_filtered[['Desa', 'Skor_Potensi', 'Est_Unserved_KK', 'Sektor_Dominan']].sort_values('Skor_Potensi', ascending=False), hide_index=True, use_container_width=True)
 
 # ================= TAB 3: SATURATION =================
@@ -378,9 +378,6 @@ with tab4:
         st.bar_chart(rf_data.set_index('Faktor'))
 
     st.subheader("📋 Interpretasi Skor Risiko")
-    with st.expander("ℹ️ Definisi Skor Risiko"):
-        st.write("Gabungan risiko saturasi, ekonomi, dan lingkungan.")
-    
     def interpret_risk(score):
         if score > 80: return "⛔ KRITIS"
         elif score > 60: return "⚠️ TINGGI"
@@ -399,29 +396,24 @@ with tab5:
     ref_l2 = dataset['level2']
     ref_l1 = dataset['level1']
 
-    # --- 1. LOKASI SELECTION (COMMON FOR BOTH METHODS) ---
+    # --- 1. LOKASI SELECTION (COMMON) ---
     with st.container():
         st.markdown('<div class="validation-card">', unsafe_allow_html=True)
         st.markdown("#### 1. Lokasi Usaha")
-        
         c_loc1, c_loc2 = st.columns(2)
         with c_loc1:
             prov_opts = sorted(ref_l3['Provinsi Usaha'].astype(str).unique())
             sel_prov = st.selectbox("Provinsi", prov_opts)
-        
         with c_loc2:
             kab_opts = sorted(ref_l3[ref_l3['Provinsi Usaha'] == sel_prov]['Kabupaten/kota'].astype(str).unique())
             sel_kab = st.selectbox("Kabupaten/Kota", kab_opts)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 2. SECTOR INPUT METHOD SELECTION ---
+    # --- 2. SECTOR INPUT METHOD ---
     st.markdown("#### 2. Identifikasi Jenis Usaha")
-    
-    # Init variables
     selected_sector = None
     selected_sub_sector = None
     
-    # 2 OPSI INPUT (Horizontal Radio / Tabs look)
     input_method = st.radio("Metode Input Sektor:", ["🗂️ Pilih dari List Eksisting", "🤖 Cari dengan AI (Free Text)"], horizontal=True)
     
     if input_method == "🗂️ Pilih dari List Eksisting":
@@ -439,10 +431,9 @@ with tab5:
             st.markdown('<div class="option-card">', unsafe_allow_html=True)
             user_query = st.text_input("Ketik Jenis Usaha (Contoh: Jualan Bakso, Ternak Lele, Toko Baju)", placeholder="Ketik disini...")
             
-            # AI MATCHING LOGIC
             suggested_options = []
             if user_query:
-                # Prioritize filtered location
+                # Prioritize filtered location data
                 relevant_data = ref_l3[ref_l3['Provinsi Usaha'] == sel_prov]
                 unique_subs = relevant_data['Sub Sektor Ekonomi'].dropna().unique().tolist()
                 
@@ -457,7 +448,6 @@ with tab5:
                 st.success(f"🤖 **Rekomendasi AI:** Ditemukan {len(suggested_options)} sub-sektor.")
                 selected_sub_sector = st.radio("Pilih yang Sesuai:", suggested_options)
                 
-                # Auto-find Parent Sector
                 if selected_sub_sector:
                     try:
                         found_row = ref_l3[ref_l3['Sub Sektor Ekonomi'] == selected_sub_sector].iloc[0]
@@ -481,7 +471,7 @@ with tab5:
                 in_hpp = st.number_input("HPP (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
             with c_in3:
                 in_laba = st.number_input("Laba (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
-                
+            
             btn_check = st.button("🚀 Cek Validasi", type="primary")
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -489,7 +479,6 @@ with tab5:
         if btn_check:
             st.markdown("### 📊 Hasil Analisa Multi-Level")
             
-            # Helper to render card
             def render_level_check(level_name, dataset, query_mask, inputs):
                 match = dataset[query_mask]
                 if match.empty: return None
@@ -500,7 +489,6 @@ with tab5:
                 max_laba = row['LABA_MAX_WAJAR']
                 max_plafond = row['PLAFOND_MAX_WAJAR']
                 
-                # Logic Status
                 status_omzet = "✅ WAJAR" if inputs['omzet'] <= max_omzet else "❌ TIDAK WAJAR"
                 status_hpp = "✅ WAJAR" if inputs['hpp'] <= max_hpp else "❌ TIDAK WAJAR"
                 status_laba = "✅ WAJAR" if inputs['laba'] <= max_laba else "❌ TIDAK WAJAR"
@@ -533,16 +521,12 @@ with tab5:
 
             inputs = {'omzet': in_omzet, 'hpp': in_hpp, 'laba': in_laba}
             
-            # Logic Checking (Cascading)
-            # Level 1
             mask1 = (ref_l1['Provinsi Usaha'] == sel_prov) & (ref_l1['Sektor Ekonomi'] == selected_sector)
             res1 = render_level_check("Level 1: Provinsi & Sektor", ref_l1, mask1, inputs)
             
-            # Level 2
             mask2 = (ref_l2['Provinsi Usaha'] == sel_prov) & (ref_l2['Sektor Ekonomi'] == selected_sector) & (ref_l2['Sub Sektor Ekonomi'] == selected_sub_sector)
             res2 = render_level_check("Level 2: Provinsi & Sub Sektor", ref_l2, mask2, inputs)
             
-            # Level 3
             mask3 = (ref_l3['Provinsi Usaha'] == sel_prov) & (ref_l3['Kabupaten/kota'] == sel_kab) & (ref_l3['Sektor Ekonomi'] == selected_sector) & (ref_l3['Sub Sektor Ekonomi'] == selected_sub_sector)
             res3 = render_level_check(f"Level 3: {sel_kab} & Sub Sektor", ref_l3, mask3, inputs)
             
@@ -555,4 +539,4 @@ with tab5:
 
 # Footer
 st.markdown("---")
-st.caption("MRM Intelligence Framework v12.7 | AI Sector Matching Enabled")
+st.caption("MRM Intelligence Framework | AI Sector Matching Enabled")
