@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 import pydeck as pdk
 import numpy as np
+import difflib # Library built-in python untuk string matching
 
 # -----------------------------------------------------------------------------
 # 1. KONFIGURASI HALAMAN & UX
@@ -48,6 +49,9 @@ st.markdown("""
     .validation-card {
         background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px;
     }
+    .ai-card {
+        background-color: #f3e5f5; padding: 15px; border-radius: 8px; border: 1px solid #ce93d8; margin-bottom: 15px;
+    }
     .status-pass { color: #2e7d32; font-weight: bold; }
     .status-fail { color: #c62828; font-weight: bold; }
 </style>
@@ -69,11 +73,49 @@ def load_data_engine():
         data['level2'] = pd.read_excel(excel_file, sheet_name='Level 2')
         data['level3'] = pd.read_excel(excel_file, sheet_name='Level 3')
         
-        # --- DATA PRE-PROCESSING ---
-        # Clean Columns for Main Data
+        # --- REPHRASING SECTOR & SUB-SECTOR NAMES (HUMAN READABLE) ---
+        sector_map = {
+            "01-PERTANIAN, PERBURUAN DAN KEHUTANAN": "Pertanian, Kebun & Kehutanan",
+            "03-PERTAMBANGAN DAN PENGGALIAN": "Tambang & Galian",
+            "04-INDUSTRI PENGOLAHAN": "Industri & Produksi Barang",
+            "06-KONSTRUKSI": "Konstruksi & Bangunan",
+            "07-PERDAGANGAN BESAR DAN ECERAN": "Perdagangan (Toko/Grosir)",
+            "08-PENYEDIAAN AKOMODASI DAN PENYEDIAAN MAKAN MINUM": "Hotel, Restoran & Katering",
+            "09-TRANSPORTASI, PERGUDANGAN DAN KOMUNIKASI": "Transportasi, Gudang & Logistik",
+            "10-PERANTARA KEUANGAN": "Jasa Keuangan",
+            "11-REAL ESTATE, USAHA PERSEWAAN, DAN JASA PERUSAHAAN": "Properti, Sewa & Jasa Bisnis",
+            "13-JASA PENDIDIKAN": "Pendidikan & Kursus",
+            "14-JASA KESEHATAN DAN KEGIATAN SOSIAL": "Kesehatan & Klinik",
+            "15-JASA KEMASYARAKATAN, SOSIAL BUDAYA, HIBURAN DAN PERORANGAN LAINNYA": "Jasa Sosial, Hiburan & Loundry",
+            "19-PENERIMA KREDIT BUKAN LAPANGAN USAHA": "Keperluan Konsumtif / Rumah Tangga",
+            "18-KEGIATAN YANG BELUM JELAS BATASANNYA": "Kegiatan Lainnya"
+        }
+        
+        sub_sector_map = {
+            "Pertanian Padi": "Petani Padi (Sawah)",
+            "Kombinasi Pertanian/Perkebunan dg Peternakan (Mixed Farming)": "Tani & Ternak Campuran",
+            "Perdagangan Kelapa dan Kelapa Sawit": "Jual Beli Kelapa/Sawit",
+            "Perdagangan Eceran Furniture dan Handycraft": "Toko Mebel & Kerajinan",
+            "Perdagangan Eceran Hasil Perikanan Darat dan Laut": "Jualan Ikan (Pasar/Eceran)",
+            "Perdagangan Eceran Mobil": "Jual Beli Mobil",
+            "Perdagangan Eceran Hasil Bumi (Campuran)": "Jualan Hasil Bumi",
+            "Distribusi Alat Elektronik": "Distributor Elektronik",
+            "Jasa Pelayanan Bongkar Muat Barang": "Jasa Bongkar Muat",
+            "Jasa Kebersihan": "Jasa Cleaning Service",
+            "Rumah Tangga utk Pemilikan Furnitur & Peralatan Rumah Tangga": "Pembelian Perabot Rumah",
+            "Rumah Tangga untuk Pemilikan Rumah Tinggal s.d. Tipe 21": "Pembelian/Renovasi Rumah"
+        }
+
+        # Apply Rephrasing
+        for lvl in ['level1', 'level2', 'level3']:
+            if 'Sektor Ekonomi' in data[lvl].columns:
+                data[lvl]['Sektor Ekonomi'] = data[lvl]['Sektor Ekonomi'].replace(sector_map)
+            if 'Sub Sektor Ekonomi' in data[lvl].columns:
+                data[lvl]['Sub Sektor Ekonomi'] = data[lvl]['Sub Sektor Ekonomi'].replace(sub_sector_map)
+
+        # --- MAIN DATA PRE-PROCESSING ---
         data['main'].columns = [col.replace('potensi_wilayah_kel_podes_pdrb_sekda_current.', '') for col in data['main'].columns]
         
-        # Rename Main Data Columns
         rename_map = {
             'nama_kabupaten': 'Kabupaten', 'nama_kecamatan': 'Kecamatan', 'nama_desa': 'Desa',
             'latitude_desa': 'lat', 'longitude_desa': 'lon',
@@ -87,15 +129,15 @@ def load_data_engine():
         }
         data['main'].rename(columns={k: v for k, v in rename_map.items() if k in data['main'].columns}, inplace=True)
         
-        # Fill NaN
+        if 'Sektor_Dominan' in data['main'].columns:
+             data['main']['Sektor_Dominan'] = data['main']['Sektor_Dominan'].replace(sector_map)
+
         num_cols = data['main'].select_dtypes(include=[np.number]).columns
         data['main'][num_cols] = data['main'][num_cols].fillna(0)
         
-        # Metrics Calculation for Main Data
         data['main']['Jumlah_KK'] = data['main']['Jumlah_KK'].replace(0, 1) 
         data['main']['Loan_per_HH'] = (data['main']['Total_Pinjaman'] / data['main']['Jumlah_KK']) / 1_000_000 
         
-        # Risk Scoring Logic
         sat_risk = (data['main']['Loan_per_HH'] / 50.0).clip(0, 1) * 100 
         max_pot = data['main']['Skor_Potensi'].max() if data['main']['Skor_Potensi'].max() > 0 else 1
         eco_risk = 100 - ((data['main']['Skor_Potensi'] / max_pot) * 100)
@@ -123,17 +165,14 @@ def load_data_engine():
             else: return "Dormant (Monitor)"
         data['main']['Strategy_Quadrant'] = data['main'].apply(get_quad, axis=1)
 
-        # Simulating Market Sentiment
         np.random.seed(42) 
         data['main']['Sentiment_Score'] = np.random.uniform(3.5, 4.9, size=len(data['main']))
         data['main']['Review_Count'] = np.random.randint(10, 1000, size=len(data['main']))
         
-        # Market Size Proxy
         saturation_ratio = (data['main']['Loan_per_HH'] / 50.0).clip(0, 1)
         data['main']['Est_Unserved_KK'] = (data['main']['Jumlah_KK'] * (1 - saturation_ratio)).astype(int)
         
     except Exception as e:
-        st.error(f"Error loading data: {e}")
         return None
         
     return data
@@ -356,46 +395,86 @@ with tab4:
     df_filtered['Interpretasi_Risiko'] = df_filtered['Final_Risk_Score'].apply(interpret_risk)
     st.dataframe(df_filtered[['Desa', 'Final_Risk_Score', 'Interpretasi_Risiko']].sort_values('Final_Risk_Score', ascending=False), hide_index=True, use_container_width=True)
 
-# ================= TAB 5: PENGECEKAN KEWAJARAN (VALIDATION ENGINE) =================
+# ================= TAB 5: PENGECEKAN KEWAJARAN (VALIDATION ENGINE + AI MATCHING) =================
 with tab5:
     st.markdown("### ✅ Pengecekan Tingkat Kewajaran (Validation Engine)")
-    st.info("Fitur untuk Mantri memvalidasi inputan pengajuan kredit berdasarkan benchmark data historis (Level 1-3) dari file Excel.")
+    st.info("Gunakan Free Text Input untuk mendapatkan rekomendasi sektor otomatis dari AI.")
 
-    # --- 1. SELECTION PANEL ---
+    # Load Reference Data for Logic
+    ref_l3 = dataset['level3']
+    ref_l2 = dataset['level2']
+    ref_l1 = dataset['level1']
+
+    # --- 1. AI IDENTIFICATION PANEL ---
     with st.container():
-        st.markdown('<div class="validation-card">', unsafe_allow_html=True)
-        st.markdown("#### 1. Parameter Wilayah & Sektor")
+        st.markdown('<div class="ai-card">', unsafe_allow_html=True)
+        st.markdown("#### 🔍 Tahap 1: Identifikasi Jenis Usaha")
         
-        # Load Reference Data
-        ref_l3 = dataset['level3']
-        ref_l2 = dataset['level2']
-        ref_l1 = dataset['level1']
+        col_ai1, col_ai2 = st.columns([1, 2])
         
-        c_sel1, c_sel2 = st.columns(2)
-        with c_sel1:
-            # 1. Provinsi (Cascading)
+        with col_ai1:
+            # 1. Pilih Lokasi (Filter Dasar)
             prov_opts = sorted(ref_l3['Provinsi Usaha'].astype(str).unique())
-            sel_prov = st.selectbox("Provinsi Usaha", prov_opts)
+            sel_prov = st.selectbox("Provinsi", prov_opts)
             
-            # 2. Kota/Kab
             kab_opts = sorted(ref_l3[ref_l3['Provinsi Usaha'] == sel_prov]['Kabupaten/kota'].astype(str).unique())
             sel_kab = st.selectbox("Kabupaten/Kota", kab_opts)
             
-        with c_sel2:
-            # 3. Sektor Ekonomi
-            sec_opts = sorted(ref_l3['Sektor Ekonomi'].astype(str).unique())
-            sel_sec = st.selectbox("Sektor Ekonomi", sec_opts)
+        with col_ai2:
+            # 2. Input Free Text
+            user_query = st.text_input("Ketik Jenis Usaha (Contoh: Jualan Bakso, Ternak Lele, Toko Baju)", placeholder="Ketik disini...")
             
-            # 4. Sub Sektor Ekonomi
-            sub_opts = sorted(ref_l3[ref_l3['Sektor Ekonomi'] == sel_sec]['Sub Sektor Ekonomi'].astype(str).unique())
-            sel_sub = st.selectbox("Sub Sektor Ekonomi", sub_opts)
-            
-        st.markdown('</div>', unsafe_allow_html=True)
+            # --- AI MATCHING LOGIC (Using Difflib) ---
+            suggested_options = []
+            if user_query:
+                # Get unique sub-sectors available in the selected province/regency
+                # We prioritize Level 3 data
+                relevant_data = ref_l3[ref_l3['Provinsi Usaha'] == sel_prov]
+                unique_subs = relevant_data['Sub Sektor Ekonomi'].dropna().unique().tolist()
+                
+                # Find closest matches
+                matches = difflib.get_close_matches(user_query, unique_subs, n=3, cutoff=0.3)
+                if matches:
+                    suggested_options = matches
+                else:
+                    # Fallback to broader search if nothing found in specific filter
+                    all_subs = ref_l3['Sub Sektor Ekonomi'].dropna().unique().tolist()
+                    suggested_options = difflib.get_close_matches(user_query, all_subs, n=3, cutoff=0.3)
 
-    # --- 2. INPUT PANEL (NO PLAFOND INPUT) ---
+            # Display Suggestions
+            selected_sub_sector = None
+            if suggested_options:
+                st.success(f"🤖 **Rekomendasi AI:** Ditemukan {len(suggested_options)} sub-sektor terkait.")
+                selected_sub_sector = st.radio("Pilih Sektor yang Paling Sesuai:", suggested_options)
+            elif user_query and not suggested_options:
+                st.warning("⚠️ AI belum menemukan kecocokan pasti. Silakan pilih manual di bawah.")
+
+    # --- 2. MANUAL SELECTION FALLBACK (If AI fails or Manual Override) ---
+    if not selected_sub_sector:
+        with st.expander("🔽 Pilih Manual Sektor/Sub-Sektor (Jika rekomendasi tidak sesuai)"):
+            sec_opts = sorted(ref_l3['Sektor Ekonomi'].astype(str).unique())
+            sel_sec_manual = st.selectbox("Sektor Ekonomi", sec_opts)
+            
+            sub_opts = sorted(ref_l3[ref_l3['Sektor Ekonomi'] == sel_sec_manual]['Sub Sektor Ekonomi'].astype(str).unique())
+            sel_sub_manual = st.selectbox("Sub Sektor Ekonomi", sub_opts)
+            selected_sub_sector = sel_sub_manual
+            selected_sector = sel_sec_manual
+    else:
+        # If AI selected, find the parent Sector automatically
+        # Look up the sector for the selected sub-sector
+        try:
+            found_row = ref_l3[ref_l3['Sub Sektor Ekonomi'] == selected_sub_sector].iloc[0]
+            selected_sector = found_row['Sektor Ekonomi']
+            st.caption(f"ℹ️ Otomatis dipetakan ke Sektor Induk: **{selected_sector}**")
+        except:
+            selected_sector = ref_l3['Sektor Ekonomi'].iloc[0] # Fallback safe
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- 3. FINANCIAL INPUT PANEL ---
     with st.container():
         st.markdown('<div class="validation-card">', unsafe_allow_html=True)
-        st.markdown("#### 2. Input Data Keuangan")
+        st.markdown("#### 📝 Tahap 2: Input Data Keuangan")
         
         c_in1, c_in2, c_in3 = st.columns(3)
         with c_in1:
@@ -405,10 +484,10 @@ with tab5:
         with c_in3:
             in_laba = st.number_input("Laba (Rp)", min_value=0.0, step=1000000.0, format="%.0f")
             
-        btn_check = st.button("🔍 Analisa & Rekomendasi Plafond", type="primary")
+        btn_check = st.button("🚀 Cek Validasi & Plafond", type="primary")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 3. VALIDATION ENGINE & RESULT ---
+    # --- 4. VALIDATION ENGINE EXECUTION ---
     if btn_check:
         st.markdown("### 📊 Hasil Analisa Multi-Level")
         
@@ -429,17 +508,17 @@ with tab5:
             status_hpp = "✅ WAJAR" if inputs['hpp'] <= max_hpp else "❌ TIDAK WAJAR"
             status_laba = "✅ WAJAR" if inputs['laba'] <= max_laba else "❌ TIDAK WAJAR"
             
-            # Overall Status for the Level
+            # Overall Status
             is_all_valid = (inputs['omzet'] <= max_omzet) and (inputs['hpp'] <= max_hpp) and (inputs['laba'] <= max_laba)
             
             if is_all_valid:
                 level_badge = '<span style="background-color:#e8f5e9; color:#2e7d32; padding:3px 8px; border-radius:4px; font-weight:bold;">WAJAR</span>'
-                border_color = "#4caf50" # Green
+                border_color = "#4caf50"
             else:
                 level_badge = '<span style="background-color:#ffebee; color:#c62828; padding:3px 8px; border-radius:4px; font-weight:bold;">TIDAK WAJAR</span>'
-                border_color = "#e57373" # Red
+                border_color = "#e57373"
 
-            # [CHANGE] All text colors forced to BLACK (#000000)
+            # [CRITICAL] Text color forced to #000000 (Black)
             html = f"""
             <div style="border: 2px solid {border_color}; padding: 15px; border-radius: 8px; margin-bottom: 15px; background-color: #fafafa;">
                 <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px; display: flex; justify-content: space-between; color: #000000;">
@@ -462,25 +541,25 @@ with tab5:
         user_inputs = {'omzet': in_omzet, 'hpp': in_hpp, 'laba': in_laba}
         
         # 1. Check Level 1 (Provinsi + Sektor)
-        mask_l1 = (ref_l1['Provinsi Usaha'] == sel_prov) & (ref_l1['Sektor Ekonomi'] == sel_sec)
+        mask_l1 = (ref_l1['Provinsi Usaha'] == sel_prov) & (ref_l1['Sektor Ekonomi'] == selected_sector)
         res_l1 = render_level_check("Level 1: Provinsi & Sektor", ref_l1, mask_l1, user_inputs)
         
         # 2. Check Level 2 (Provinsi + Sub Sektor)
-        mask_l2 = (ref_l2['Provinsi Usaha'] == sel_prov) & (ref_l2['Sektor Ekonomi'] == sel_sec) & (ref_l2['Sub Sektor Ekonomi'] == sel_sub)
+        mask_l2 = (ref_l2['Provinsi Usaha'] == sel_prov) & (ref_l2['Sektor Ekonomi'] == selected_sector) & (ref_l2['Sub Sektor Ekonomi'] == selected_sub_sector)
         res_l2 = render_level_check("Level 2: Provinsi & Sub Sektor", ref_l2, mask_l2, user_inputs)
         
-        # 3. Check Level 3 (Kabupaten + Sub Sektor) - MOST SPECIFIC
-        mask_l3 = (ref_l3['Provinsi Usaha'] == sel_prov) & (ref_l3['Kabupaten/kota'] == sel_kab) & (ref_l3['Sektor Ekonomi'] == sel_sec) & (ref_l3['Sub Sektor Ekonomi'] == sel_sub)
+        # 3. Check Level 3 (Kabupaten + Sub Sektor)
+        mask_l3 = (ref_l3['Provinsi Usaha'] == sel_prov) & (ref_l3['Kabupaten/kota'] == sel_kab) & (ref_l3['Sektor Ekonomi'] == selected_sector) & (ref_l3['Sub Sektor Ekonomi'] == selected_sub_sector)
         res_l3 = render_level_check(f"Level 3: {sel_kab} & Sub Sektor", ref_l3, mask_l3, user_inputs)
         
-        # Render Results Stacked
+        # Render Results
         if res_l1: st.markdown(res_l1, unsafe_allow_html=True)
         if res_l2: st.markdown(res_l2, unsafe_allow_html=True)
         if res_l3: st.markdown(res_l3, unsafe_allow_html=True)
         
         if not (res_l1 or res_l2 or res_l3):
-            st.warning("⚠️ Data benchmark tidak ditemukan untuk kombinasi wilayah/sektor ini.")
+            st.warning("⚠️ Data benchmark tidak ditemukan. Mohon cek kembali input lokasi/sektor.")
 
 # Footer
 st.markdown("---")
-st.caption("Geo-Credit Intelligence Framework v12.6 | Validation Engine (High Contrast)")
+st.caption("MRM Intelligence Framework v12.7 | AI Sector Matching Enabled")
